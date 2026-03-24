@@ -1,5 +1,5 @@
 import React from 'react';
-import { GraduationCap, Wallet, Server, Code, ArrowRight, CheckCircle2, Database, Mic, ShieldAlert, Trophy, Brain, Globe, Sparkles, Handshake } from 'lucide-react';
+import { GraduationCap, Wallet, Server, Code, CheckCircle2, Database, Mic, ShieldAlert, Trophy, Brain, Globe, Sparkles, Handshake } from 'lucide-react';
 
 export function Execution101() {
   return (

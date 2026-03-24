@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Calculator as CalcIcon, TrendingDown, TrendingUp, DollarSign } from 'lucide-react';
+import { Calculator as CalcIcon } from 'lucide-react';
 
 export function Calculator() {
   const [monthlyFee, setMonthlyFee] = useState(1000);
