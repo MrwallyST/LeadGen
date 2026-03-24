@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, Cloud, Search, DollarSign, Sparkles, PhoneCall, Globe, Zap, BarChart3, Layers, Clock, TrendingUp, Trophy } from 'lucide-react';
+import { Cloud, Search, DollarSign, Sparkles, PhoneCall, Globe, Zap, BarChart3, Layers, Clock, TrendingUp, Trophy } from 'lucide-react';
 
 export function MoneyMakers() {
   const models = [
