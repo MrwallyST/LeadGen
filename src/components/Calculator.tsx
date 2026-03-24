@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Calculator as CalcIcon, TrendingDown, TrendingUp, DollarSign } from 'lucide-react';
 
 export function Calculator() {
@@ -7,20 +7,22 @@ export function Calculator() {
   const [churnRate, setChurnRate] = useState(15); // % of clients lost per month
 
   // Calculate 12-month projection
-  const projection = Array.from({ length: 12 }).reduce<any[]>((acc, _, index) => {
-    const previousClients = index === 0 ? 0 : acc[index - 1].clients;
-    const lostClients = Math.round(previousClients * (churnRate / 100));
-    const netClients = previousClients + clientsPerMonth - lostClients;
-    const mrr = netClients * monthlyFee;
-    
-    acc.push({
-      month: index + 1,
-      clients: netClients,
-      lost: lostClients,
-      mrr: mrr
-    });
-    return acc;
-  }, []);
+  const projection = useMemo(() => {
+    return Array.from({ length: 12 }).reduce<any[]>((acc, _, index) => {
+      const previousClients = index === 0 ? 0 : acc[index - 1].clients;
+      const lostClients = Math.round(previousClients * (churnRate / 100));
+      const netClients = previousClients + clientsPerMonth - lostClients;
+      const mrr = netClients * monthlyFee;
+
+      acc.push({
+        month: index + 1,
+        clients: netClients,
+        lost: lostClients,
+        mrr: mrr
+      });
+      return acc;
+    }, []);
+  }, [monthlyFee, clientsPerMonth, churnRate]);
 
   return (
     <div className="p-4 lg:p-8 max-w-6xl mx-auto space-y-8">
