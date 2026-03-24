@@ -16,14 +16,24 @@ export function Dashboard({ state, updateRoutine }: DashboardProps) {
     loomsSent: false,
   };
 
-  const activeClients = state.leads.filter(l => l.status === 'Closed Won').length;
-  const mrr = state.leads.filter(l => l.status === 'Closed Won').reduce((sum, l) => sum + (l.value || 1000), 0);
-  const loomsSent = state.leads.filter(l => ['Contacted', 'Meeting Booked', 'Proposal Sent', 'Closed Won'].includes(l.status)).length;
+  const { activeClients, mrr, loomsSent } = state.leads.reduce(
+    (acc, l) => {
+      if (l.status === 'Closed Won') {
+        acc.activeClients++;
+        acc.mrr += l.value || 1000;
+        acc.loomsSent++;
+      } else if (['Contacted', 'Meeting Booked', 'Proposal Sent'].includes(l.status)) {
+        acc.loomsSent++;
+      }
+      return acc;
+    },
+    { activeClients: 0, mrr: 0, loomsSent: 0 }
+  );
   
   const startDate = new Date(state.startDate);
-  const diffTime = Math.abs(new Date().getTime() - startDate.getTime());
-  const daysActive = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  const progress = Math.min(100, (daysActive / 100) * 100);
+  const diffTime = new Date().getTime() - startDate.getTime();
+  const daysActive = diffTime < 0 ? 0 : Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  const progress = Math.max(0, Math.min(100, (daysActive / 100) * 100));
 
   return (
     <div className="p-4 lg:p-8 max-w-6xl mx-auto space-y-8">
