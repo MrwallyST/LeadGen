@@ -27,6 +27,7 @@ interface LeadGenState {
   expandedLeadId: string | null;
   isSettingsOpen: boolean;
   sessionLog: { timestamp: string; action: string; status: 'info' | 'success' | 'warning' }[];
+  sortOrder: 'score-desc' | 'score-asc' | 'newest';
 }
 
 import { GoogleGenAI, Type } from '@google/genai';
@@ -45,7 +46,8 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     activeListTab: 'all',
     expandedLeadId: null,
     isSettingsOpen: false,
-    sessionLog: []
+    sessionLog: [],
+    sortOrder: 'score-desc'
   });
 
   const addLog = (action: string, status: 'info' | 'success' | 'warning' = 'info') => {
@@ -290,7 +292,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
         Return ONLY valid JSON array.`;
 
         const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
+          model: 'gemini-1.5-flash',
           contents: prompt,
           config: {
             responseMimeType: 'application/json',
@@ -464,7 +466,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
       const ai = new GoogleGenAI({ apiKey: settings.geminiKey });
       
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-1.5-flash',
         config: {
           systemInstruction: `You are "The Closer," a world-class B2B copywriter. 
           Copywriting Directives:
@@ -501,6 +503,50 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     }
   };
 
+  const handleExportCsv = () => {
+    if (state.leadsFound.length === 0) {
+      alert("No leads to export.");
+      return;
+    }
+
+    const csvData = state.leadsFound.map(lead => ({
+      BusinessName: lead.businessName,
+      Website: lead.url,
+      Niche: lead.niche,
+      Status: lead.status,
+      Address: lead.address || '',
+      Phone: lead.phone || '',
+      DecisionMakerName: lead.decisionMaker?.name || '',
+      DecisionMakerTitle: lead.decisionMaker?.title || '',
+      Emails: lead.emails?.join(', ') || '',
+      Score: lead.score || '',
+      Budget: lead.bant?.budget || '',
+      Authority: lead.bant?.authority || '',
+      Need: lead.bant?.need || '',
+      Timeline: lead.bant?.timeline || '',
+      MissingWebsite: lead.signals?.missingWebsite ? 'Yes' : 'No',
+      LowReviews: lead.signals?.lowReviews ? 'Yes' : 'No',
+      SlowSpeed: lead.signals?.slowSpeed ? 'Yes' : 'No',
+      NoCTA: lead.signals?.noCta ? 'Yes' : 'No',
+      WordOfMouthScore: lead.wordOfMouth?.score || '',
+      WordOfMouthSummary: lead.wordOfMouth?.summary || '',
+      OwnerVibe: lead.sniperInsights?.ownerVibe || '',
+      BestSalesAngle: lead.sniperInsights?.bestSalesAngle || '',
+      Icebreaker: lead.sniperInsights?.icebreaker || ''
+    }));
+
+    const csv = Papa.unparse(csvData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `leads_export_${new Date().getTime()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    addLog(`Orchestrator: Exported ${csvData.length} leads to CSV.`, "success");
+  };
+
   const toggleNightShift = () => setState(prev => ({ ...prev, isNightShift: !prev.isNightShift }));
   
   const addWebhook = () => updateSettings({ webhookUrls: [...settings.webhookUrls, ''] });
@@ -526,6 +572,72 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     window.open(`https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(query)}`, '_blank');
   };
 
+  const handleGenerateSniperInsights = async (lead: Lead) => {
+    if (!settings.geminiKey) {
+      alert("Please configure your Gemini API Key in Settings to generate sniper insights.");
+      setState(prev => ({ ...prev, isSettingsOpen: true }));
+      return;
+    }
+
+    try {
+      addLog(`Orchestrator: Generating Sniper Insights for ${lead.businessName}...`);
+      const ai = new GoogleGenAI({ apiKey: settings.geminiKey });
+
+      const prompt = `Analyze this local business lead and provide 'Sniper Insights' for a cold outreach:
+      Business Name: ${lead.businessName}
+      Niche: ${lead.niche}
+      Website: ${lead.url}
+      Reviews: ${lead.wordOfMouth?.summary || 'Unknown'}
+
+      Return ONLY a JSON object with these exactly 3 keys:
+      1. ownerVibe (string) - A short description of the likely owner's personality based on their industry/reviews.
+      2. bestSalesAngle (string) - The best angle to pitch them (e.g. Needs Website, Needs SEO, Automation).
+      3. icebreaker (string) - A hyper-personalized 1-sentence icebreaker to start the cold email.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-1.5-flash',
+        contents: prompt,
+        config: { responseMimeType: 'application/json' }
+      });
+
+      const insights = JSON.parse(response.text || '{}');
+
+      const newSniperInsights = {
+        ownerVibe: insights.ownerVibe || 'Unknown',
+        bestSalesAngle: insights.bestSalesAngle || 'Unknown',
+        icebreaker: insights.icebreaker || 'Unknown'
+      };
+
+      setState(prev => ({
+        ...prev,
+        leadsFound: prev.leadsFound.map(l =>
+          l.id === lead.id ? { ...l, sniperInsights: newSniperInsights } : l
+        )
+      }));
+      addLog(`Orchestrator: Sniper Insights generated for ${lead.businessName}.`, "success");
+      return newSniperInsights;
+    } catch (error) {
+      console.error("Error generating insights:", error);
+      alert("Failed to generate Sniper Insights.");
+      return null;
+    }
+  };
+
+  const handleAutoPilot = async (lead: Lead) => {
+    addLog(`Orchestrator: Initiating 1-Click Auto-Pilot for ${lead.businessName}...`);
+    handleSaveLead(lead);
+
+    let currentLead = { ...lead };
+    if (!currentLead.sniperInsights) {
+      const generatedInsights = await handleGenerateSniperInsights(currentLead);
+      if (generatedInsights) {
+        currentLead.sniperInsights = generatedInsights;
+      }
+    }
+    await handleSendToAutomation(currentLead);
+    addLog(`Orchestrator: 1-Click Auto-Pilot sequence complete for ${lead.businessName}.`, "success");
+  };
+
   const handleBuildMockup = async (lead: Lead) => {
     if (!settings.geminiKey) {
       alert("Please configure your Gemini API Key in Settings to build mockups.");
@@ -542,7 +654,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
       Return ONLY the raw HTML code, no markdown formatting or backticks.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-1.5-flash',
         contents: prompt
       });
 
@@ -568,6 +680,10 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     if (state.activeListTab === 'no-website') return hasNoWebsite;
     if (state.activeListTab === 'saved') return lead.isSaved;
     return true;
+  }).sort((a, b) => {
+    if (state.sortOrder === 'score-desc') return (b.score || 0) - (a.score || 0);
+    if (state.sortOrder === 'score-asc') return (a.score || 0) - (b.score || 0);
+    return 0; // newest first is default order in array
   });
 
   return (
@@ -795,17 +911,21 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
           </div>
           
           <div className="flex items-center space-x-4">
-            <select className="bg-white border border-zinc-200 rounded-xl px-4 py-2 text-xs font-bold text-zinc-600 outline-none focus:ring-2 focus:ring-indigo-500">
-              <option>Sort AI Score (High to Low)</option>
-              <option>Sort AI Score (Low to High)</option>
-              <option>Newest First</option>
+            <select
+              value={state.sortOrder}
+              onChange={(e) => setState(prev => ({ ...prev, sortOrder: e.target.value as LeadGenState['sortOrder'] }))}
+              className="bg-white border border-zinc-200 rounded-xl px-4 py-2 text-xs font-bold text-zinc-600 outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="score-desc">Sort AI Score (High to Low)</option>
+              <option value="score-asc">Sort AI Score (Low to High)</option>
+              <option value="newest">Newest First</option>
             </select>
             <label className="flex items-center space-x-2 px-4 py-2 bg-white border border-zinc-200 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-50 transition-colors cursor-pointer">
               <Plus className="w-4 h-4" />
               <span>Import CSV</span>
               <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
             </label>
-            <button className="flex items-center space-x-2 px-4 py-2 bg-white border border-zinc-200 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-50 transition-colors">
+            <button onClick={handleExportCsv} className="flex items-center space-x-2 px-4 py-2 bg-white border border-zinc-200 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-50 transition-colors">
               <Download className="w-4 h-4" />
               <span>Export CSV</span>
             </button>
@@ -831,7 +951,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
           ) : filteredLeads.length > 0 ? (
             filteredLeads.map((lead) => (
               <LeadCard 
-                key={lead.id} 
+                key={lead.id}
                 lead={lead} 
                 isExpanded={state.expandedLeadId === lead.id}
                 onToggle={() => toggleLeadExpansion(lead.id)}
@@ -840,6 +960,8 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                 onDraftEmail={() => handleDraftEmail(lead)}
                 onBuildMockup={() => handleBuildMockup(lead)}
                 onFindDecisionMaker={() => handleFindDecisionMaker(lead)}
+                onAutoPilot={() => handleAutoPilot(lead)}
+                onGenerateSniperInsights={() => handleGenerateSniperInsights(lead)}
               />
             ))
           ) : (
@@ -987,7 +1109,8 @@ function LeadCard({
   onDraftEmail,
   onBuildMockup,
   onFindDecisionMaker,
-  key
+  onAutoPilot,
+  onGenerateSniperInsights
 }: { 
   lead: Lead, 
   isExpanded: boolean, 
@@ -997,7 +1120,9 @@ function LeadCard({
   onDraftEmail: () => void,
   onBuildMockup: () => void,
   onFindDecisionMaker: () => void,
-  key?: any
+  onAutoPilot: () => void,
+  onGenerateSniperInsights: () => void,
+  key?: React.Key
 }) {
   return (
     <div className={`bg-white rounded-3xl border transition-all duration-300 ${isExpanded ? 'border-indigo-200 shadow-xl shadow-indigo-50' : 'border-zinc-200 hover:border-zinc-300'}`}>
@@ -1137,7 +1262,7 @@ function LeadCard({
                   </div>
                 ) : (
                   <div className="py-10 text-center">
-                    <button className="text-xs font-bold text-indigo-600 hover:underline">Generate Sniper Insights</button>
+                    <button onClick={onGenerateSniperInsights} className="text-xs font-bold text-indigo-600 hover:underline">Generate Sniper Insights</button>
                   </div>
                 )}
               </div>
@@ -1145,7 +1270,7 @@ function LeadCard({
 
             {/* Right Actions */}
             <div className="space-y-3">
-              <button className="w-full py-3 px-4 bg-indigo-600 text-white rounded-xl font-bold text-xs flex items-center justify-center space-x-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
+              <button onClick={onAutoPilot} className="w-full py-3 px-4 bg-indigo-600 text-white rounded-xl font-bold text-xs flex items-center justify-center space-x-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
                 <Zap className="w-4 h-4" />
                 <span>1-Click Auto-Pilot</span>
               </button>
@@ -1154,7 +1279,7 @@ function LeadCard({
                   <Search className="w-3 h-3" />
                   <span>Find Decision Maker</span>
                 </button>
-                <button className="py-2 px-3 bg-zinc-100 text-zinc-600 rounded-xl font-bold text-[10px] flex items-center justify-center space-x-2 hover:bg-zinc-200 transition-all">
+                <button onClick={onGenerateSniperInsights} className="py-2 px-3 bg-zinc-100 text-zinc-600 rounded-xl font-bold text-[10px] flex items-center justify-center space-x-2 hover:bg-zinc-200 transition-all">
                   <Zap className="w-3 h-3" />
                   <span>Sniper Insights</span>
                 </button>
