@@ -70,7 +70,8 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     toggleHunting,
     addLog,
     markLeadSaved,
-    appendLeads
+    appendLeads,
+    updateLead
   } = useLeadHunter({
     settings,
     addLead,
@@ -299,7 +300,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
   };
 
   const handleGenerateSniperInsights = async (lead: Lead) => {
-    const apiKey = settings.geminiKey || process.env.GEMINI_API_KEY;
+    const apiKey = settings.geminiKey || import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
       alert("Please configure your Gemini API Key in Settings to generate sniper insights.");
       setState(prev => ({ ...prev, isSettingsOpen: true }));
@@ -335,12 +336,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
         icebreaker: insights.icebreaker || 'Unknown'
       };
 
-      setState(prev => ({
-        ...prev,
-        leadsFound: prev.leadsFound.map(l =>
-          l.id === lead.id ? { ...l, sniperInsights: newSniperInsights } : l
-        )
-      }));
+      updateLead(lead.id, { sniperInsights: newSniperInsights });
       addLog(`Orchestrator: Sniper Insights generated for ${lead.businessName}.`, "success");
       return newSniperInsights;
     } catch (error) {
@@ -366,7 +362,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
   };
 
   const handleBuildMockup = async (lead: Lead) => {
-    const apiKey = settings.geminiKey || process.env.GEMINI_API_KEY;
+    const apiKey = settings.geminiKey || import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
       alert("Please configure your Gemini API Key in Settings to build mockups.");
       setState(prev => ({ ...prev, isSettingsOpen: true }));

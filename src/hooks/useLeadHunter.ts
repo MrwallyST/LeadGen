@@ -268,6 +268,13 @@ export function useLeadHunter({
     setState(prev => ({ ...prev, leadsFound: [...leads, ...prev.leadsFound] }));
   };
 
+  const updateLead = (leadId: string, updates: Partial<Lead>) => {
+    setState(prev => ({
+      ...prev,
+      leadsFound: prev.leadsFound.map(l => l.id === leadId ? { ...l, ...updates } : l)
+    }));
+  };
+
   const toggleHunting = async (
     mode: HuntMode = state.huntMode,
     restrictNoWebsite = false,
@@ -358,6 +365,7 @@ export function useLeadHunter({
     toggleHunting,
     addLog,
     markLeadSaved,
-    appendLeads
+    appendLeads,
+    updateLead
   };
 }
