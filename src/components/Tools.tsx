@@ -6,6 +6,17 @@ interface ToolsProps {
   state: AppState;
 }
 
+const NICHE_OPTIONS = [
+  { value: 'plumber', label: 'Plumber' },
+  { value: 'roofer', label: 'Roofer' },
+  { value: 'contractor', label: 'Contractor' },
+  { value: 'HVAC', label: 'HVAC' },
+  { value: 'dentist', label: 'Dentist' },
+  { value: 'landscaper', label: 'Landscaper' },
+  { value: 'lawyer', label: 'Lawyer' },
+  { value: 'electrician', label: 'Electrician' }
+];
+
 export function Tools({ state }: ToolsProps) {
   const [city, setCity] = useState('');
   const [niche, setNiche] = useState('plumber');
@@ -16,8 +27,6 @@ export function Tools({ state }: ToolsProps) {
   const [avgDealValue, setAvgDealValue] = useState<number>(3000);
   const [currentLeads, setCurrentLeads] = useState<number>(50);
   const [currentCloseRate, setCurrentCloseRate] = useState<number>(20);
-
-  const niches = ['plumber', 'roofer', 'contractor', 'HVAC', 'dentist', 'landscaper', 'lawyer', 'electrician'];
 
   const selectedLead = state.leads.find(l => l.id === selectedLeadId);
 
@@ -104,8 +113,8 @@ Best,
                 value={niche}
                 onChange={e => setNiche(e.target.value)}
               >
-                {niches.map(n => (
-                  <option key={n} value={n}>{n.charAt(0).toUpperCase() + n.slice(1)}</option>
+                {NICHE_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
             </div>
