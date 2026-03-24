@@ -66,7 +66,17 @@ const PHASES: Phase[] = [
 export function FirstSaleJourney() {
   const [completedTasks, setCompletedTasks] = useState<string[]>(() => {
     const saved = localStorage.getItem('firstSaleProgress');
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
+          return parsed;
+        }
+      } catch (e) {
+        console.warn('Failed to parse firstSaleProgress from storage', e);
+      }
+    }
+    return [];
   });
 
   useEffect(() => {

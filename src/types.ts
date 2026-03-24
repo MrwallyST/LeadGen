@@ -67,3 +67,60 @@ export interface AppState {
   startDate: string;
   settings: AppSettings;
 }
+
+// Type Guards
+
+export function isValidLeadStatus(status: any): status is LeadStatus {
+  return [
+    'New',
+    'Contacted',
+    'Meeting Booked',
+    'Proposal Sent',
+    'Closed Won',
+    'Closed Lost',
+  ].includes(status);
+}
+
+export function isValidLead(lead: any): lead is Lead {
+  if (!lead || typeof lead !== 'object') return false;
+  return (
+    typeof lead.id === 'string' &&
+    typeof lead.businessName === 'string' &&
+    typeof lead.url === 'string' &&
+    typeof lead.niche === 'string' &&
+    isValidLeadStatus(lead.status)
+  );
+}
+
+export function isValidDailyRoutine(routine: any): routine is DailyRoutine {
+  if (!routine || typeof routine !== 'object') return false;
+  return (
+    typeof routine.date === 'string' &&
+    typeof routine.formsFilled === 'boolean' &&
+    typeof routine.socialChecked === 'boolean' &&
+    typeof routine.loomsSent === 'boolean'
+  );
+}
+
+export function isValidAppSettings(settings: any): settings is AppSettings {
+  if (!settings || typeof settings !== 'object') return false;
+  return (
+    Array.isArray(settings.webhookUrls) &&
+    settings.webhookUrls.every((url: any) => typeof url === 'string') &&
+    typeof settings.netlifyToken === 'string' &&
+    typeof settings.geminiKey === 'string' &&
+    typeof settings.googleMapsKey === 'string'
+  );
+}
+
+export function isValidAppState(state: any): state is AppState {
+  if (!state || typeof state !== 'object') return false;
+  return (
+    Array.isArray(state.leads) &&
+    state.leads.every(isValidLead) &&
+    Array.isArray(state.routines) &&
+    state.routines.every(isValidDailyRoutine) &&
+    typeof state.startDate === 'string' &&
+    isValidAppSettings(state.settings)
+  );
+}

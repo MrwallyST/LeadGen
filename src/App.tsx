@@ -22,6 +22,7 @@ import { FirstSaleJourney } from './components/FirstSaleJourney';
 import { Mastery } from './components/Mastery';
 import { AIAgentShortcut } from './components/AIAgentShortcut';
 import { AppState, Lead, DailyRoutine } from './types';
+import { parseAppState } from './utils/state';
 import { Menu, X, LogIn, Loader2 } from 'lucide-react';
 import { auth, db, signInWithGoogle, logout } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -33,17 +34,13 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   
-  const [state, setState] = useState<AppState>({
-    leads: [],
-    routines: [],
-    startDate: new Date().toISOString(),
-    settings: {
-      webhookUrls: [''],
-      netlifyToken: '',
-      geminiKey: '',
-      googleMapsKey: ''
-    }
+  const [state, setState] = useState<AppState>(() => {
+    return parseAppState(localStorage.getItem('appState'));
   });
+
+  useEffect(() => {
+    localStorage.setItem('appState', JSON.stringify(state));
+  }, [state]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
