@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, Circle, ArrowRight } from 'lucide-react';
+import { CheckCircle2, ArrowRight } from 'lucide-react';
 
 export function Roadmap() {
   const roadmap = [
