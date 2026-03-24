@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Zap, Target, Globe, Mail, Shield, Settings, Play, Pause, 
-  RefreshCw, Plus, Trash2, ExternalLink, Search, AlertCircle, 
-  Send, Copy, CheckCircle, ChevronDown, ChevronUp, Save, 
+import {
+  Zap, Target, Globe, Mail, Shield, Settings, Play, Pause,
+  RefreshCw, Plus, Trash2, ExternalLink, Search, AlertCircle,
+  Send, Copy, CheckCircle, ChevronDown, ChevronUp, Save,
   Facebook, Instagram, Linkedin, Download, Layout, Eye, Rocket,
   X, Map, Link as LinkIcon
 } from 'lucide-react';
-import { AppSettings, Lead, LeadStatus } from '../types';
+import { AppSettings, Lead } from '../types';
+import { useLeadHunter } from '../hooks/useLeadHunter';
+import { GoogleGenAI } from '@google/genai';
+import Papa from 'papaparse';
 
 interface LeadGeneratorProps {
   settings: AppSettings;
@@ -15,24 +18,15 @@ interface LeadGeneratorProps {
 }
 
 interface LeadGenState {
-  isHunting: boolean;
-  isHuntingNoWebsite: boolean;
   isNightShift: boolean;
-  huntMode: 'specific' | 'roulette' | 'infinite';
-  leadsFound: Lead[];
   currentNiche: string;
   currentCity: string;
   leadCount: number;
-  error: string | null;
   activeListTab: 'all' | 'has-website' | 'no-website' | 'saved' | 'playbook';
   expandedLeadId: string | null;
   isSettingsOpen: boolean;
-  sessionLog: { timestamp: string; action: string; status: 'info' | 'success' | 'warning' }[];
   sortOrder: 'score-desc' | 'score-asc' | 'newest';
 }
-
-import { GoogleGenAI, Type } from '@google/genai';
-import Papa from 'papaparse';
 
 const NICHES = ['Plumbers','HVAC','Roofers','Electricians','Landscapers','Pest Control','Tree Service','Pool Cleaning','Fencing','Concrete Contractor','Solar','Med Spa','Custom Remodeling','Personal Injury Law','Chiropractors','Dentists','Auto Repair','Pressure Washing','Painters','Flooring','Handyman','Moving Services','Carpet Cleaning','Window Cleaning','Gym / Fitness Studio','Real Estate Agent','Insurance Agent','Towing Service','Locksmith','Junk Removal'];
 
@@ -52,25 +46,39 @@ const CITIES = [
 
 export function LeadGenerator({ settings, updateSettings, addLead }: LeadGeneratorProps) {
   const [state, setState] = useState<LeadGenState>({
-    isHunting: false,
-    isHuntingNoWebsite: false,
     isNightShift: false,
-    huntMode: 'specific',
-    leadsFound: [],
     currentNiche: 'Plumbers',
     currentCity: 'Austin, TX',
     leadCount: 10,
-    error: null,
     activeListTab: 'all',
     expandedLeadId: null,
     isSettingsOpen: false,
-    sessionLog: [],
     sortOrder: 'score-desc'
   });
   const [nicheOpen, setNicheOpen] = useState(false);
   const [cityOpen, setCityOpen] = useState(false);
   const nicheRef = useRef<HTMLDivElement>(null);
   const cityRef = useRef<HTMLDivElement>(null);
+
+  const {
+    isHunting,
+    isHuntingNoWebsite,
+    huntMode,
+    leadsFound,
+    error,
+    sessionLog,
+    toggleHunting,
+    addLog,
+    markLeadSaved,
+    appendLeads
+  } = useLeadHunter({
+    settings,
+    addLead,
+    currentNiche: state.currentNiche,
+    currentCity: state.currentCity,
+    leadCount: state.leadCount,
+    isNightShift: state.isNightShift
+  });
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -81,95 +89,6 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
-
-  // Infinite Loop Logic
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-    if (state.isHunting && state.huntMode === 'infinite') {
-      timeoutId = setTimeout(() => {
-        // Automatically trigger the next hunt after 5 seconds
-        toggleHunting('infinite', state.isHuntingNoWebsite, true);
-      }, 5000);
-    }
-    return () => clearTimeout(timeoutId);
-  }, [state.leadsFound]);
-
-  const addLog = (action: string, status: 'info' | 'success' | 'warning' = 'info') => {
-    setState(prev => ({
-      ...prev,
-      sessionLog: [{ timestamp: new Date().toLocaleTimeString(), action, status }, ...prev.sessionLog].slice(0, 10)
-    }));
-  };
-
-  // Mock data for demonstration as seen in video
-  const mockLeads: Lead[] = [
-    {
-      id: '1',
-      businessName: 'Bill Anderson Air',
-      url: 'http://billandersonair.com',
-      niche: 'HVAC',
-      status: 'New',
-      score: 9.5,
-      address: '1515 S Mason Rd, Katy, TX 77450',
-      phone: '281-785-9999',
-      decisionMaker: { name: 'Bill Anderson', title: 'Owner' },
-      emails: ['bill@billandersonair.com'],
-      wordOfMouth: { score: 8.8, summary: 'Highly rated for quick response times.' },
-      sniperInsights: {
-        ownerVibe: 'Old school, values reliability.',
-        bestSalesAngle: 'Modernizing customer communication.',
-        icebreaker: 'Saw your great reviews on Mason Rd!'
-      }
-    },
-    {
-      id: '2',
-      businessName: 'AC A/C & Heating',
-      url: 'https://ac-ac-heating.com',
-      niche: 'HVAC',
-      status: 'New',
-      score: 9.0,
-      address: '1812 Avenue D Suite 204, Katy, TX 77493',
-      phone: '281-505-1845',
-      decisionMaker: { name: 'Adam Collins', title: 'Founder' },
-      emails: ['adam@ac-ac-heating.com']
-    },
-    {
-      id: '3',
-      businessName: 'True Fix Air Conditioning',
-      url: 'https://truefix.com',
-      niche: 'HVAC',
-      status: 'New',
-      score: 8.5,
-      address: '25218 Lakeview Rd, Katy, TX 77494',
-      phone: '281-392-9334'
-    },
-    {
-      id: '4',
-      businessName: 'Eddie\'s Heating & Air',
-      url: 'https://eddiesheatingandac.com',
-      niche: 'HVAC',
-      status: 'New',
-      score: 8.2,
-      address: '1415 East Ave Suite B, Katy, TX 77493',
-      phone: '832-391-7616'
-    },
-    {
-      id: '5',
-      businessName: 'AMS A/C & Heating',
-      url: 'https://amskaty.com',
-      niche: 'HVAC',
-      status: 'New',
-      score: 8.0,
-      address: 'Katy, TX',
-      phone: '281-786-0770',
-      wordOfMouth: { score: 8.6, summary: 'A go-to choice for Katy residents looking for fair pricing.' },
-      sniperInsights: {
-        ownerVibe: 'Professional, community-focused.',
-        bestSalesAngle: 'AI-driven appointment setting.',
-        icebreaker: 'Love your "Quality First" approach!'
-      }
-    }
-  ];
 
   const handleCsvUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -196,268 +115,13 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
           isSaved: true
         }));
 
-        setState(prev => ({
-          ...prev,
-          leadsFound: [...leads, ...prev.leadsFound],
-        }));
-        addLog(`Orchestrator: 🟢 Successfully imported ${leads.length} leads from CSV.`, "success");
+        appendLeads(leads);
+        addLog(`Orchestrator: 🟢 Successfully imported ${leads.length} leads from CSV.`, 'success');
       },
       error: (error) => {
         addLog(`Orchestrator: 🔴 CSV Import failed: ${error.message}`, "warning");
       }
     });
-  };
-
-  const toggleHunting = async (mode: 'specific' | 'roulette' | 'infinite' = state.huntMode, restrictNoWebsite = false, isAutoLoop = false) => {
-    if (state.isHunting && !isAutoLoop) {
-      setState(prev => ({ ...prev, isHunting: false, isHuntingNoWebsite: false }));
-      return;
-    }
-
-    if (!settings.geminiKey && !settings.googleMapsKey && !process.env.GEMINI_API_KEY && !process.env.GOOGLE_MAPS_API_KEY) {
-      alert("Please configure either a Gemini API Key (for fictional leads) or a Google Maps API Key (for real leads) in Settings.");
-      setState(prev => ({ ...prev, isSettingsOpen: true }));
-      return;
-    }
-
-    setState(prev => ({ ...prev, isHunting: true, isHuntingNoWebsite: restrictNoWebsite, error: null, leadsFound: [], huntMode: mode }));
-
-    try {
-      const isRandom = mode === 'roulette' || mode === 'infinite';
-      const isNoWebsiteOnly = restrictNoWebsite;
-      
-      const niches = ['Roofing', 'HVAC', 'Med Spa', 'Solar', 'Custom Remodeling', 'Personal Injury Law', 'Plumbing', 'Landscaping', 'Pest Control', 'Tree Service', 'Pool Cleaning', 'Fencing', 'Electrician', 'Concrete Contractor'];
-      const cities = [
-        // Tier 1
-        'Austin, TX', 'Denver, CO', 'Nashville, TN', 'Charlotte, NC', 'Orlando, FL', 'Phoenix, AZ', 'Dallas, TX', 'Atlanta, GA', 'Las Vegas, NV', 'Miami, FL',
-        // Tier 2 (More likely to have no-website businesses)
-        'Waco, TX', 'Mesa, AZ', 'Henderson, NV', 'Garland, TX', 'Hialeah, FL', 'Reno, NV', 'Boise, ID', 'Spokane, WA', 'Des Moines, IA', 'Little Rock, AR', 'Amarillo, TX', 'Shreveport, LA', 'Mobile, AL'
-      ];
-      
-      const targetNiche = isRandom ? niches[Math.floor(Math.random() * niches.length)] : state.currentNiche;
-      const targetCity = isRandom ? cities[Math.floor(Math.random() * cities.length)] : state.currentCity;
-
-      let formattedLeads: Lead[] = [];
-
-      if (settings.googleMapsKey || process.env.GOOGLE_MAPS_API_KEY) {
-        const mapsKey = settings.googleMapsKey || process.env.GOOGLE_MAPS_API_KEY;
-        // --- REAL LEADS VIA GOOGLE MAPS ---
-        addLog(`Orchestrator: Initiating Deep Scrape for ${targetNiche} in ${targetCity}...`);
-        
-        // Use modifiers to bypass highly optimized businesses and find the "hidden gems"
-        const searchModifiers = ['', 'independent', 'local', 'affordable', 'family owned'];
-        const modifier = searchModifiers[Math.floor(Math.random() * searchModifiers.length)];
-        const searchQuery = modifier ? `${modifier} ${targetNiche} in ${targetCity}` : `${targetNiche} in ${targetCity}`;
-        
-        const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': mapsKey!,
-            'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.primaryTypeDisplayName'
-          },
-          body: JSON.stringify({
-            textQuery: searchQuery,
-            maxResultCount: Math.min(Math.max(state.leadCount, 1), 20) // Google specifically caps at 20 max
-          })
-        });
-
-        const data = await response.json();
-        
-        if (data.error) {
-           throw new Error(data.error.message || "Invalid Google Maps API key.");
-        }
-
-        let fetchedPlaces = data.places || [];
-
-        if (isNoWebsiteOnly) {
-          fetchedPlaces = fetchedPlaces.filter((place: any) => !place.websiteUri);
-        }
-
-        formattedLeads = fetchedPlaces.map((place: any, index: number) => {
-          const hasWebsite = !!place.websiteUri;
-          const rating = place.rating || 0;
-          const reviews = place.userRatingCount || 0;
-          
-          let angle = "General Growth";
-          if (!hasWebsite) angle = "Needs a Website ASAP";
-          else if (rating < 4.0) angle = "Reputation Management (Bad Reviews)";
-          else if (reviews < 20) angle = "Needs More Reviews / SEO";
-          else angle = "Scale with AI Automation / Paid Ads";
-
-          return {
-            id: `gmaps-${place.id || Date.now()}-${index}`,
-            businessName: place.displayName?.text || 'Unknown Business',
-            url: place.websiteUri || 'No website',
-            address: place.formattedAddress || 'No address',
-            phone: place.nationalPhoneNumber || 'No phone',
-            niche: place.primaryTypeDisplayName?.text || targetNiche,
-            status: 'New',
-            isSaved: state.isNightShift,
-            score: rating,
-            wordOfMouth: {
-              score: rating,
-              summary: `${reviews} Google Reviews`
-            },
-            decisionMaker: {
-              name: 'Owner / Manager',
-              title: 'Decision Maker'
-            },
-            emails: [],
-            sniperInsights: {
-              ownerVibe: rating >= 4.5 ? 'Proud of their service, protective of brand.' : 'Likely stressed, needs operational help.',
-              bestSalesAngle: angle,
-              icebreaker: hasWebsite ? `Loved checking out your site, but noticed a missed opportunity.` : `Noticed you don't have a website yet, how are you getting leads?`
-            }
-          };
-        });
-      } else {
-        // --- FICTIONAL LEADS VIA GEMINI ---
-        const apiKey = settings.geminiKey || process.env.GEMINI_API_KEY;
-        if (!apiKey) throw new Error("API key not valid");
-        const ai = new GoogleGenAI({ apiKey });
-        
-        const targetContext = isRandom 
-          ? `a randomly selected HIGH-TICKET niche (e.g., Roofing, HVAC, Med Spa, Solar, Custom Remodeling, Personal Injury Law) in a randomly selected US city. Specifically generate businesses that NEED HELP with their marketing (e.g., they have no website, bad reviews, or low word-of-mouth scores).`
-          : `the niche '${state.currentNiche}' in '${state.currentCity}'`;
-
-        const noWebsiteInstruction = isNoWebsiteOnly
-          ? `CRITICAL - NO WEBSITE LEADS: 100% of the generated leads MUST NOT have a website (set the 'url' field to an empty string ""). This is a strict requirement.`
-          : `CRITICAL - NO WEBSITE LEADS: At least 40% of the generated leads MUST NOT have a website (set the 'url' field to an empty string ""). This is mandatory so the user can pitch web design services.`;
-
-        const prompt = `Generate a JSON array of ${state.leadCount} realistic, fictional local business leads for ${targetContext}. 
-        Persona: You are "The Prospector," a lead qualification specialist.
-        Directives:
-        1. BANT Framework: Qualify leads based on Budget, Authority, Need, and Timeline.
-        2. Signal Detection: Identify specific pain points (e.g., missing website, low reviews, slow speed).
-        3. ${noWebsiteInstruction}
-        4. CRITICAL - LOW REVIEWS: At least 30% must have fewer than 5 reviews.
-        5. Zero Hallucination: Ensure data looks authentic for the specified location.
-
-        Include the following fields for each lead:
-        - businessName (string)
-        - url (string)
-        - address (string)
-        - phone (string)
-        - niche (string)
-        - decisionMaker (object with 'name' and 'title')
-        - emails (array of strings)
-        - score (number 1-10)
-        - bant (object with 'budget', 'authority', 'need', 'timeline' strings)
-        - signals (object with 'missingWebsite', 'lowReviews', 'slowSpeed', 'noCta' booleans)
-        - wordOfMouth (object with 'score' and 'summary')
-        - sniperInsights (object with 'ownerVibe', 'bestSalesAngle', 'icebreaker')
-        Return ONLY valid JSON array.`;
-
-        const response = await ai.models.generateContent({
-          model: 'gemini-1.5-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  businessName: { type: Type.STRING },
-                  url: { type: Type.STRING },
-                  address: { type: Type.STRING },
-                  phone: { type: Type.STRING },
-                  niche: { type: Type.STRING },
-                  decisionMaker: {
-                    type: Type.OBJECT,
-                    properties: {
-                      name: { type: Type.STRING },
-                      title: { type: Type.STRING }
-                    }
-                  },
-                  emails: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING }
-                  },
-                  score: { type: Type.NUMBER },
-                  bant: {
-                    type: Type.OBJECT,
-                    properties: {
-                      budget: { type: Type.STRING },
-                      authority: { type: Type.STRING },
-                      need: { type: Type.STRING },
-                      timeline: { type: Type.STRING }
-                    }
-                  },
-                  signals: {
-                    type: Type.OBJECT,
-                    properties: {
-                      missingWebsite: { type: Type.BOOLEAN },
-                      lowReviews: { type: Type.BOOLEAN },
-                      slowSpeed: { type: Type.BOOLEAN },
-                      noCta: { type: Type.BOOLEAN }
-                    }
-                  },
-                  wordOfMouth: {
-                    type: Type.OBJECT,
-                    properties: {
-                      score: { type: Type.NUMBER },
-                      summary: { type: Type.STRING }
-                    }
-                  },
-                  sniperInsights: {
-                    type: Type.OBJECT,
-                    properties: {
-                      ownerVibe: { type: Type.STRING },
-                      bestSalesAngle: { type: Type.STRING },
-                      icebreaker: { type: Type.STRING }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        });
-
-        const generatedLeads = JSON.parse(response.text || '[]');
-        formattedLeads = generatedLeads.map((lead: any, index: number) => ({
-          id: `generated-${Date.now()}-${index}`,
-          ...lead,
-          niche: lead.niche || state.currentNiche,
-          status: 'New',
-          isSaved: state.isNightShift
-        }));
-      }
-
-      if (state.isNightShift) {
-        formattedLeads.forEach(lead => {
-          addLead({
-            businessName: lead.businessName,
-            url: lead.url,
-            niche: lead.niche,
-            status: 'New',
-            address: lead.address,
-            phone: lead.phone,
-            decisionMaker: lead.decisionMaker,
-            emails: lead.emails,
-            wordOfMouth: lead.wordOfMouth,
-            sniperInsights: lead.sniperInsights,
-            score: lead.score,
-            value: 1000
-          });
-        });
-      }
-
-      setState(prev => ({ 
-        ...prev, 
-        leadsFound: formattedLeads, 
-        isHunting: mode === 'infinite' // keep hunting if infinite loop
-      }));
-    } catch (error: any) {
-      console.error("Error generating leads:", error);
-      const msg = (error?.status === 400 || error.message.includes('API key not valid'))
-        ? "Invalid API key. Please check your Gemini API key in Settings or .env file." 
-        : error.message || "Failed to generate leads.";
-      setState(prev => ({ ...prev, isHunting: false, isHuntingNoWebsite: false, error: msg }));
-      // Fallback to mock leads if API fails
-      setState(prev => ({ ...prev, leadsFound: mockLeads, isHunting: false, isHuntingNoWebsite: false }));
-    }
   };
 
   const handleSaveLead = (lead: Lead) => {
@@ -475,11 +139,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
       score: lead.score,
       value: 1000
     });
-    
-    setState(prev => ({
-      ...prev,
-      leadsFound: prev.leadsFound.map(l => l.id === lead.id ? { ...l, isSaved: true } : l)
-    }));
+    markLeadSaved(lead.id);
   };
 
   const handleSendToAutomation = async (lead: Lead) => {
@@ -520,7 +180,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
   };
 
   const handleDraftEmail = async (lead: Lead) => {
-    const apiKey = settings.geminiKey || process.env.GEMINI_API_KEY;
+    const apiKey = settings.geminiKey || import.meta.env.VITE_GEMINI_API_KEY;
     if (!apiKey) {
       alert("Please configure your Gemini API Key in Settings to draft emails.");
       setState(prev => ({ ...prev, isSettingsOpen: true }));
@@ -570,12 +230,12 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
   };
 
   const handleExportCsv = () => {
-    if (state.leadsFound.length === 0) {
+    if (leadsFound.length === 0) {
       alert("No leads to export.");
       return;
     }
 
-    const csvData = state.leadsFound.map(lead => ({
+    const csvData = leadsFound.map(lead => ({
       BusinessName: lead.businessName,
       Website: lead.url,
       Niche: lead.niche,
@@ -739,7 +399,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     }
   };
 
-  const filteredLeads = state.leadsFound.filter(lead => {
+  const filteredLeads = leadsFound.filter(lead => {
     if (state.activeListTab === 'all') return true;
     
     const hasNoWebsite = !lead.url || lead.url.trim() === '' || lead.url.toLowerCase().includes('no website') || lead.url.toLowerCase().includes('none');
@@ -814,33 +474,33 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
           <div className="flex items-center space-x-8 border-b border-zinc-100 pb-4">
             <button 
               onClick={() => setState(prev => ({ ...prev, huntMode: 'specific' }))}
-              className={`text-sm font-bold pb-4 relative transition-colors ${state.huntMode === 'specific' ? 'text-indigo-600' : 'text-zinc-400 hover:text-zinc-600'}`}
+              className={`text-sm font-bold pb-4 relative transition-colors ${huntMode === 'specific' ? 'text-indigo-600' : 'text-zinc-400 hover:text-zinc-600'}`}
             >
               <div className="flex items-center space-x-2">
                 <Target className="w-4 h-4" />
                 <span>Specific Target</span>
               </div>
-              {state.huntMode === 'specific' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600" />}
+              {huntMode === 'specific' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600" />}
             </button>
             <button 
               onClick={() => setState(prev => ({ ...prev, huntMode: 'roulette' }))}
-              className={`text-sm font-bold pb-4 relative transition-colors ${state.huntMode === 'roulette' ? 'text-indigo-600' : 'text-zinc-400 hover:text-zinc-600'}`}
+              className={`text-sm font-bold pb-4 relative transition-colors ${huntMode === 'roulette' ? 'text-indigo-600' : 'text-zinc-400 hover:text-zinc-600'}`}
             >
               <div className="flex items-center space-x-2">
                 <RefreshCw className="w-4 h-4" />
                 <span>Global Roulette</span>
               </div>
-              {state.huntMode === 'roulette' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600" />}
+              {huntMode === 'roulette' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600" />}
             </button>
             <button 
               onClick={() => setState(prev => ({ ...prev, huntMode: 'infinite' }))}
-              className={`text-sm font-bold pb-4 relative transition-colors ${state.huntMode === 'infinite' ? 'text-indigo-600' : 'text-zinc-400 hover:text-zinc-600'}`}
+              className={`text-sm font-bold pb-4 relative transition-colors ${huntMode === 'infinite' ? 'text-indigo-600' : 'text-zinc-400 hover:text-zinc-600'}`}
             >
               <div className="flex items-center space-x-2">
                 <RefreshCw className="w-4 h-4 animate-spin-slow" />
                 <span>Infinite Loop</span>
               </div>
-              {state.huntMode === 'infinite' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600" />}
+              {huntMode === 'infinite' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-600" />}
             </button>
           </div>
 
@@ -919,16 +579,16 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                   className="w-24 px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                 />
                 <button 
-                  onClick={() => toggleHunting(state.huntMode, false)}
+                  onClick={() => toggleHunting(huntMode, false)}
                   className={`flex-1 py-3 px-6 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all ${
-                    state.isHunting 
+                    isHunting 
                       ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' 
                       : state.isNightShift 
                         ? 'bg-zinc-900 text-white hover:bg-black shadow-lg shadow-zinc-200'
                         : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200'
                   }`}
                 >
-                  {state.isHunting && !state.isHuntingNoWebsite ? (
+                  {isHunting && !isHuntingNoWebsite ? (
                     <>
                       <Pause className="w-5 h-5" />
                       <span>Stop Hunting</span>
@@ -941,15 +601,15 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                   )}
                 </button>
                 <button
-                  onClick={() => toggleHunting(state.huntMode, true)}
+                  onClick={() => toggleHunting(huntMode, true)}
                   className={`py-3 px-6 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all ${
-                    state.isHunting && state.isHuntingNoWebsite
+                    isHunting && isHuntingNoWebsite
                       ? 'bg-rose-500 text-white shadow-lg shadow-rose-200'
                       : 'bg-amber-500 text-white hover:bg-amber-600 shadow-lg shadow-amber-200'
                   }`}
                   title="Strictly hunt for businesses that do NOT have a website"
                 >
-                  {state.isHunting && state.isHuntingNoWebsite ? (
+                  {isHunting && isHuntingNoWebsite ? (
                     <>
                       <Pause className="w-5 h-5" />
                       <span>Stop</span>
@@ -991,8 +651,8 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
           </div>
         </div>
         <div className="p-6 font-mono text-[11px] space-y-2 max-h-48 overflow-y-auto">
-          {state.sessionLog.length > 0 ? (
-            state.sessionLog.map((log, i) => (
+          {sessionLog.length > 0 ? (
+            sessionLog.map((log, i) => (
               <div key={i} className="flex items-start space-x-3">
                 <span className="text-zinc-600 shrink-0">[{log.timestamp}]</span>
                 <span className={`${
@@ -1055,7 +715,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
 
         {/* Leads Grid */}
         <div className="space-y-4">
-          {state.isHunting ? (
+          {isHunting ? (
             <div className="bg-white rounded-3xl border border-zinc-200 p-20 text-center space-y-4">
               <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto">
                 <RefreshCw className="w-10 h-10 text-indigo-600 animate-spin" />
@@ -1065,7 +725,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                   {state.isNightShift ? 'Night Shift Active...' : 'Deep Scraping Google Maps...'}
                 </h4>
                 <p className="text-zinc-500 text-sm">
-                  {state.huntMode === 'roulette' || state.huntMode === 'infinite' ? 'Bypassing top results to find hidden gems in smaller cities...' : `Scanning 50+ profiles in ${state.currentCity} for ${state.currentNiche}...`}
+                  {huntMode === 'roulette' || huntMode === 'infinite' ? 'Bypassing top results to find hidden gems in smaller cities...' : `Scanning 50+ profiles in ${state.currentCity} for ${state.currentNiche}...`}
                 </p>
               </div>
             </div>
