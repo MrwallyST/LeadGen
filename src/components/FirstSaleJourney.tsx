@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trophy, CheckCircle2, Circle, Play, ArrowRight, Target, Wrench, Video, PhoneCall } from 'lucide-react';
+import { Trophy, CheckCircle2, Circle, Play, Target, Wrench, Video, PhoneCall } from 'lucide-react';
 
 interface Task {
   id: string;
