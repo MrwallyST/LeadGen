@@ -1,0 +1,140 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - email: string (required)
+    //   - name: string (optional)
+    //   - startDate: string (required)
+    //
+    // Collection: users/{userId}/leads
+    // Document ID: {leadId}
+    // Fields:
+    //   - businessName: string (required)
+    //   - url: string (optional)
+    //   - niche: string (optional)
+    //   - status: string (required, enum)
+    //   - contactDate: string (optional)
+    //   - loomSentDate: string (optional)
+    //   - zoomDate: string (optional)
+    //   - receivedAt: string (optional)
+    //   - formFilledAt: string (optional)
+    //   - notes: string (optional)
+    //   - value: number (optional)
+    //
+    // Collection: users/{userId}/routines
+    // Document ID: {date}
+    // Fields:
+    //   - date: string (required)
+    //   - formsFilled: boolean (required)
+    //   - socialChecked: boolean (required)
+    //   - loomsSent: boolean (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasOnlyAllowedFields(allowedFields) {
+      return request.resource.data.keys().hasOnly(allowedFields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !('field' in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['email', 'name', 'startDate', 'settings']) &&
+             data.email is string && isValidEmail(data.email) &&
+             data.startDate is string && data.startDate.size() > 0 && data.startDate.size() < 50 &&
+             (!('name' in data) || (data.name is string && data.name.size() <= 100)) &&
+             (!('settings' in data) || data.settings is map);
+    }
+
+    function isValidLead() {
+      let data = request.resource.data;
+      let validStatuses = ['New', 'Contact Form Sent', 'Loom Sent', 'Zoom Booked', 'Won them over!', 'Denied for now', 'Closed', 'Lost', 'Contacted', 'Meeting Booked', 'Proposal Sent', 'Closed Won', 'Closed Lost'];
+      
+      return hasOnlyAllowedFields(['businessName', 'url', 'niche', 'status', 'contactDate', 'loomSentDate', 'zoomDate', 'receivedAt', 'formFilledAt', 'notes', 'value', 'address', 'phone', 'decisionMaker', 'emails', 'wordOfMouth', 'sniperInsights', 'score', 'isSaved', 'websiteMockupUrl']) &&
+             data.businessName is string && data.businessName.size() > 0 && data.businessName.size() <= 200 &&
+             data.status in validStatuses &&
+             (!('url' in data) || (data.url is string && data.url.size() <= 500)) &&
+             (!('niche' in data) || (data.niche is string && data.niche.size() <= 100)) &&
+             (!('contactDate' in data) || (data.contactDate is string && data.contactDate.size() <= 50)) &&
+             (!('loomSentDate' in data) || (data.loomSentDate is string && data.loomSentDate.size() <= 50)) &&
+             (!('zoomDate' in data) || (data.zoomDate is string && data.zoomDate.size() <= 50)) &&
+             (!('receivedAt' in data) || (data.receivedAt is string && data.receivedAt.size() <= 50)) &&
+             (!('formFilledAt' in data) || (data.formFilledAt is string && data.formFilledAt.size() <= 50)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 5000)) &&
+             (!('value' in data) || (data.value is number && data.value >= 0 && data.value <= 10000000)) &&
+             (!('address' in data) || (data.address is string)) &&
+             (!('phone' in data) || (data.phone is string)) &&
+             (!('decisionMaker' in data) || (data.decisionMaker is map)) &&
+             (!('emails' in data) || (data.emails is list)) &&
+             (!('wordOfMouth' in data) || (data.wordOfMouth is map)) &&
+             (!('sniperInsights' in data) || (data.sniperInsights is map)) &&
+             (!('score' in data) || (data.score is number)) &&
+             (!('isSaved' in data) || (data.isSaved is bool)) &&
+             (!('websiteMockupUrl' in data) || (data.websiteMockupUrl is string));
+    }
+
+    function isValidRoutine() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['date', 'formsFilled', 'socialChecked', 'loomsSent']) &&
+             data.date is string && data.date.size() > 0 && data.date.size() <= 20 &&
+             data.formsFilled is bool &&
+             data.socialChecked is bool &&
+             data.loomsSent is bool;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser();
+      allow update: if isOwner(userId) && isValidUser();
+      allow delete: if isOwner(userId);
+
+      match /leads/{leadId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidLead();
+        allow update: if isOwner(userId) && isValidLead();
+        allow delete: if isOwner(userId);
+      }
+
+      match /routines/{date} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidRoutine();
+        allow update: if isOwner(userId) && isValidRoutine();
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

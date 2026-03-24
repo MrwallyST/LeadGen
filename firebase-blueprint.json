@@ -1,0 +1,142 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the 100 Day Exit Plan Tracker.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The user's email address."
+        },
+        "name": {
+          "type": "string",
+          "description": "The user's display name."
+        },
+        "startDate": {
+          "type": "string",
+          "description": "The date the user started the 100-day plan (ISO string)."
+        }
+      },
+      "required": [
+        "email",
+        "startDate"
+      ]
+    },
+    "Lead": {
+      "title": "Lead",
+      "description": "A CRM lead.",
+      "type": "object",
+      "properties": {
+        "businessName": {
+          "type": "string",
+          "description": "The name of the business."
+        },
+        "url": {
+          "type": "string",
+          "description": "The website URL of the business."
+        },
+        "niche": {
+          "type": "string",
+          "description": "The niche or industry of the business."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "New",
+            "Contact Form Sent",
+            "Loom Sent",
+            "Zoom Booked",
+            "Won them over!",
+            "Denied for now",
+            "Closed",
+            "Lost"
+          ],
+          "description": "The current status of the lead."
+        },
+        "contactDate": {
+          "type": "string",
+          "description": "The date the lead was first contacted."
+        },
+        "loomSentDate": {
+          "type": "string",
+          "description": "The date a Loom video was sent."
+        },
+        "zoomDate": {
+          "type": "string",
+          "description": "The date a Zoom meeting is scheduled."
+        },
+        "receivedAt": {
+          "type": "string",
+          "description": "The date the lead was received."
+        },
+        "formFilledAt": {
+          "type": "string",
+          "description": "The date the contact form was filled."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes about the lead."
+        },
+        "value": {
+          "type": "number",
+          "description": "The estimated value of the lead."
+        }
+      },
+      "required": [
+        "businessName",
+        "status"
+      ]
+    },
+    "DailyRoutine": {
+      "title": "DailyRoutine",
+      "description": "The user's daily routine checklist.",
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "The date of the routine (YYYY-MM-DD)."
+        },
+        "formsFilled": {
+          "type": "boolean",
+          "description": "Whether the user filled out 5 contact forms."
+        },
+        "socialChecked": {
+          "type": "boolean",
+          "description": "Whether the user checked social media."
+        },
+        "loomsSent": {
+          "type": "boolean",
+          "description": "Whether the user sent 1-2 Looms."
+        }
+      },
+      "required": [
+        "date",
+        "formsFilled",
+        "socialChecked",
+        "loomsSent"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "Stores user profiles and their start date."
+    },
+    "/users/{userId}/leads/{leadId}": {
+      "schema": {
+        "$ref": "#/entities/Lead"
+      },
+      "description": "Stores the leads for a specific user."
+    },
+    "/users/{userId}/routines/{date}": {
+      "schema": {
+        "$ref": "#/entities/DailyRoutine"
+      },
+      "description": "Stores the daily routines for a specific user."
+    }
+  }
+}
