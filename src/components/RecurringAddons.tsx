@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PhoneMissed, MessageSquare, Star, ArrowRight, Bot, Zap } from 'lucide-react';
+import { PhoneMissed, MessageSquare, Star, Bot, Zap } from 'lucide-react';
 
 export function RecurringAddons() {
   const [activeTab, setActiveTab] = useState('mctb');
