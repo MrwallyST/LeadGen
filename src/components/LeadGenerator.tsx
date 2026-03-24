@@ -17,7 +17,7 @@ interface LeadGeneratorProps {
 interface LeadGenState {
   isHunting: boolean;
   isNightShift: boolean;
-  huntMode: 'specific' | 'roulette' | 'infinite';
+  huntMode: 'specific' | 'roulette' | 'infinite' | 'no-website-only';
   leadsFound: Lead[];
   currentNiche: string;
   currentCity: string;
@@ -164,7 +164,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     });
   };
 
-  const toggleHunting = async () => {
+  const toggleHunting = async (mode: 'specific' | 'roulette' | 'infinite' | 'no-website-only' = state.huntMode) => {
     if (state.isHunting) {
       setState(prev => ({ ...prev, isHunting: false }));
       return;
@@ -176,10 +176,11 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
       return;
     }
 
-    setState(prev => ({ ...prev, isHunting: true, error: null, leadsFound: [] }));
+    setState(prev => ({ ...prev, isHunting: true, error: null, leadsFound: [], huntMode: mode }));
 
     try {
-      const isRandom = state.huntMode === 'roulette' || state.huntMode === 'infinite';
+      const isRandom = mode === 'roulette' || mode === 'infinite';
+      const isNoWebsiteOnly = mode === 'no-website-only';
       
       const niches = ['Roofing', 'HVAC', 'Med Spa', 'Solar', 'Custom Remodeling', 'Personal Injury Law', 'Plumbing', 'Landscaping', 'Pest Control', 'Tree Service', 'Pool Cleaning', 'Fencing', 'Electrician', 'Concrete Contractor'];
       const cities = [
@@ -222,7 +223,13 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
            throw new Error("No places found or invalid Google Maps API key.");
         }
 
-        formattedLeads = data.places.map((place: any, index: number) => {
+        let fetchedPlaces = data.places;
+
+        if (isNoWebsiteOnly) {
+          fetchedPlaces = fetchedPlaces.filter((place: any) => !place.websiteUri);
+        }
+
+        formattedLeads = fetchedPlaces.map((place: any, index: number) => {
           const hasWebsite = !!place.websiteUri;
           const rating = place.rating || 0;
           const reviews = place.userRatingCount || 0;
@@ -267,12 +274,16 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
           ? `a randomly selected HIGH-TICKET niche (e.g., Roofing, HVAC, Med Spa, Solar, Custom Remodeling, Personal Injury Law) in a randomly selected US city. Specifically generate businesses that NEED HELP with their marketing (e.g., they have no website, bad reviews, or low word-of-mouth scores).`
           : `the niche '${state.currentNiche}' in '${state.currentCity}'`;
 
+        const noWebsiteInstruction = isNoWebsiteOnly
+          ? `CRITICAL - NO WEBSITE LEADS: 100% of the generated leads MUST NOT have a website (set the 'url' field to an empty string ""). This is a strict requirement.`
+          : `CRITICAL - NO WEBSITE LEADS: At least 40% of the generated leads MUST NOT have a website (set the 'url' field to an empty string ""). This is mandatory so the user can pitch web design services.`;
+
         const prompt = `Generate a JSON array of ${state.leadCount} realistic, fictional local business leads for ${targetContext}. 
         Persona: You are "The Prospector," a lead qualification specialist.
         Directives:
         1. BANT Framework: Qualify leads based on Budget, Authority, Need, and Timeline.
         2. Signal Detection: Identify specific pain points (e.g., missing website, low reviews, slow speed).
-        3. CRITICAL - NO WEBSITE LEADS: At least 40% of the generated leads MUST NOT have a website (set the 'url' field to an empty string ""). This is mandatory so the user can pitch web design services.
+        3. ${noWebsiteInstruction}
         4. CRITICAL - LOW REVIEWS: At least 30% must have fewer than 5 reviews.
         5. Zero Hallucination: Ensure data looks authentic for the specified location.
 
@@ -819,7 +830,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                   className="w-24 px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                 />
                 <button 
-                  onClick={toggleHunting}
+                  onClick={() => toggleHunting(state.huntMode)}
                   className={`flex-1 py-3 px-6 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all ${
                     state.isHunting 
                       ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' 
@@ -828,7 +839,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                         : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200'
                   }`}
                 >
-                  {state.isHunting ? (
+                  {state.isHunting && state.huntMode !== 'no-website-only' ? (
                     <>
                       <Pause className="w-5 h-5" />
                       <span>Stop Hunting</span>
@@ -837,6 +848,27 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                     <>
                       <Play className="w-5 h-5" />
                       <span>{state.isNightShift ? 'Start Night Shift' : 'Hunt'}</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => toggleHunting('no-website-only')}
+                  className={`py-3 px-6 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all ${
+                    state.isHunting && state.huntMode === 'no-website-only'
+                      ? 'bg-rose-500 text-white shadow-lg shadow-rose-200'
+                      : 'bg-amber-500 text-white hover:bg-amber-600 shadow-lg shadow-amber-200'
+                  }`}
+                  title="Strictly hunt for businesses that do NOT have a website"
+                >
+                  {state.isHunting && state.huntMode === 'no-website-only' ? (
+                    <>
+                      <Pause className="w-5 h-5" />
+                      <span>Stop</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-5 h-5" />
+                      <span>Hunt No-Website Only</span>
                     </>
                   )}
                 </button>
