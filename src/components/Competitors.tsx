@@ -1,5 +1,5 @@
 import React from 'react';
-import { Swords, XCircle, CheckCircle, Target, TrendingDown, Clock, Wrench } from 'lucide-react';
+import { Swords, XCircle, CheckCircle, Target, TrendingDown, Wrench } from 'lucide-react';
 
 export function Competitors() {
   const battlecards = [
