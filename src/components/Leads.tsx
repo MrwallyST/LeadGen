@@ -8,6 +8,18 @@ interface LeadsProps {
   updateLead: (id: string, updates: Partial<Lead>) => void;
 }
 
+const getSafeUrl = (url: string) => {
+  try {
+    const parsedUrl = new URL(url.startsWith('http') ? url : `https://${url}`);
+    if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
+      return parsedUrl.href;
+    }
+  } catch (e) {
+    // Ignore invalid URLs
+  }
+  return '#';
+};
+
 export function Leads({ state, addLead, updateLead }: LeadsProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
@@ -137,7 +149,7 @@ export function Leads({ state, addLead, updateLead }: LeadsProps) {
                       <td className="px-6 py-4">
                         <div className="font-medium text-zinc-900">{lead.businessName}</div>
                         {lead.url && (
-                          <a href={lead.url.startsWith('http') ? lead.url : `https://${lead.url}`} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:underline flex items-center mt-1" onClick={e => e.stopPropagation()}>
+                          <a href={getSafeUrl(lead.url)} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:underline flex items-center mt-1" onClick={e => e.stopPropagation()}>
                             {lead.url} <ExternalLink className="w-3 h-3 ml-1" />
                           </a>
                         )}
