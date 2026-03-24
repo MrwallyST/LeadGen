@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Mail, Database, Video, ArrowRight, Skull, Zap, Crosshair } from 'lucide-react';
+import { Flame, Mail, Database, Video, Skull } from 'lucide-react';
 
 export function DemonMode() {
   const pillars = [
