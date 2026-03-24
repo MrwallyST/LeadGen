@@ -23,7 +23,7 @@ import { Mastery } from './components/Mastery';
 import { AIAgentShortcut } from './components/AIAgentShortcut';
 import { AppState, Lead, DailyRoutine } from './types';
 import { parseAppState } from './utils/state';
-import { Menu, X, LogIn, Loader2 } from 'lucide-react';
+import { Menu, X, LogIn, LogOut, Loader2 } from 'lucide-react';
 import { auth, db, signInWithGoogle, logout } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, onSnapshot, query, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -43,6 +43,12 @@ export default function App() {
   }, [state]);
 
   useEffect(() => {
+    // @ts-ignore
+    if (import.meta.env.VITE_MOCK_AUTH === 'true') {
+      setUser({ uid: 'test-user-123', email: 'tester@example.com', displayName: 'Test Agent' } as User);
+      setAuthLoading(false);
+      return;
+    }
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
@@ -140,6 +146,15 @@ export default function App() {
 
   const addLead = async (leadData: Omit<Lead, 'id'>) => {
     if (!user) return;
+    
+    // Optimistic update
+    const tempId = `temp-${Date.now()}`;
+    const newLead = { ...leadData, id: tempId, contactDate: new Date().toISOString() };
+    setState(prev => ({
+      ...prev,
+      leads: [newLead, ...prev.leads]
+    }));
+
     try {
       const leadsRef = collection(db, 'users', user.uid, 'leads');
       await addDoc(leadsRef, {
@@ -148,6 +163,12 @@ export default function App() {
       });
     } catch (error) {
       console.error("Error adding lead:", error);
+      // Revert on failure
+      setState(prev => ({
+        ...prev,
+        leads: prev.leads.filter(l => l.id !== tempId)
+      }));
+      console.warn("Lead saved locally but could not sync to Firestore.", error);
     }
   };
 
@@ -255,7 +276,7 @@ export default function App() {
               className="p-2 hover:bg-zinc-100 rounded-lg transition-colors text-zinc-500"
               title="Sign Out"
             >
-              <LogIn className="w-5 h-5 rotate-180" />
+              <LogOut className="w-5 h-5" />
             </button>
             <button 
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -270,7 +291,7 @@ export default function App() {
           {currentTab === 'dashboard' && <Dashboard state={state} updateRoutine={updateRoutine} />}
           {currentTab === 'firstclient' && <FirstClient />}
           {currentTab === 'firstsale' && <FirstSaleJourney />}
-          {currentTab === 'leads' && <Leads state={state} addLead={addLead} updateLead={updateLead} />}
+          {currentTab === 'leads' && <Leads state={state} addLead={addLead} updateLead={updateLead} settings={state.settings} />}
           {currentTab === 'leadgenerator' && <LeadGenerator settings={state.settings} updateSettings={updateSettings} addLead={addLead} />}
           {currentTab === 'prospector' && <Prospector settings={state.settings} updateSettings={updateSettings} />}
           {currentTab === 'automation' && <AutomationBlueprint />}

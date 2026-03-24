@@ -7,6 +7,7 @@ import {
   X, Map, Link as LinkIcon, FileText, BarChart, MessageSquare
 } from 'lucide-react';
 import { AppSettings, Lead } from '../types';
+import { GoogleGenAI } from '@google/genai';
 
 interface ProspectorProps {
   settings: AppSettings;
@@ -32,29 +33,50 @@ export function Prospector({ settings, updateSettings }: ProspectorProps) {
     isSettingsOpen: false
   });
 
-  const runAudit = () => {
-    setState(prev => ({ ...prev, isAuditing: true }));
-    // Simulate audit
-    setTimeout(() => {
+  const runAudit = async () => {
+    const apiKey = settings.geminiKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      alert("Please configure your Gemini API Key in Settings to run the audit.");
+      setState(prev => ({ ...prev, isSettingsOpen: true }));
+      return;
+    }
+
+    setState(prev => ({ ...prev, isAuditing: true, error: null }));
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const prompt = `You are a world-class SEO and Conversion Rate Optimization expert. Perform an audit on the business website: ${state.targetUrl}. 
+      If you cannot directly access it perfectly, infer the most common issues for this type of local business website.
+      
+      Return ONLY a JSON object with strictly these 4 keys:
+      1. score (number 1-10)
+      2. weaknesses (array of 3-4 strings detailing critical issues like 'No clear CTA', 'Slow mobile speed', etc.)
+      3. strengths (array of 2-3 strings detailing good points)
+      4. primaryAngle (string detailing the best sales angle based on the weaknesses)`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-1.5-flash',
+        contents: prompt,
+        config: { responseMimeType: 'application/json' }
+      });
+
+      const auditData = JSON.parse(response.text || '{}');
+      
       setState(prev => ({ 
         ...prev, 
         isAuditing: false,
         auditResults: {
-          score: 6.8,
-          weaknesses: [
-            'No missed-call-text-back detected',
-            'Slow mobile load time (4.2s)',
-            'Missing Google Review widget',
-            'No clear Call to Action on homepage'
-          ],
-          strengths: [
-            'Good desktop design',
-            'SSL certificate active',
-            'Active Facebook page'
-          ]
+          score: auditData.score || 6.5,
+          weaknesses: auditData.weaknesses || ['Slow mobile load time', 'No clear Call to Action'],
+          strengths: auditData.strengths || ['SSL certificate active'],
+          primaryAngle: auditData.primaryAngle || 'Focus on mobile speed and conversion improvements.'
         }
       }));
-    }, 3000);
+    } catch (error: any) {
+      console.error("Audit error:", error);
+      setState(prev => ({ ...prev, isAuditing: false, error: "Failed to run audit." }));
+      alert("Failed to run deep audit. Check your API key or console for details.");
+    }
   };
 
   const addWebhook = () => updateSettings({ webhookUrls: [...settings.webhookUrls, ''] });
@@ -269,7 +291,7 @@ export function Prospector({ settings, updateSettings }: ProspectorProps) {
                         <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Primary Sales Angle</p>
                       </div>
                       <p className="text-sm text-white font-medium leading-relaxed">
-                        Focus on the <span className="text-indigo-400">4.2s mobile load time</span>. In their niche, every second over 2.5s costs ~15% in conversion. Fixing this + adding a sticky CTA is a guaranteed 30% revenue bump.
+                        {state.auditResults.primaryAngle || `Focus on the 4.2s mobile load time. In their niche, every second over 2.5s costs ~15% in conversion. Fixing this + adding a sticky CTA is a guaranteed 30% revenue bump.`}
                       </p>
                     </div>
                   </div>

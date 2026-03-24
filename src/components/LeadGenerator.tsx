@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Zap, Target, Globe, Mail, Shield, Settings, Play, Pause, 
   RefreshCw, Plus, Trash2, ExternalLink, Search, AlertCircle, 
@@ -16,8 +16,9 @@ interface LeadGeneratorProps {
 
 interface LeadGenState {
   isHunting: boolean;
+  isHuntingNoWebsite: boolean;
   isNightShift: boolean;
-  huntMode: 'specific' | 'roulette' | 'infinite' | 'no-website-only';
+  huntMode: 'specific' | 'roulette' | 'infinite';
   leadsFound: Lead[];
   currentNiche: string;
   currentCity: string;
@@ -33,9 +34,26 @@ interface LeadGenState {
 import { GoogleGenAI, Type } from '@google/genai';
 import Papa from 'papaparse';
 
+const NICHES = ['Plumbers','HVAC','Roofers','Electricians','Landscapers','Pest Control','Tree Service','Pool Cleaning','Fencing','Concrete Contractor','Solar','Med Spa','Custom Remodeling','Personal Injury Law','Chiropractors','Dentists','Auto Repair','Pressure Washing','Painters','Flooring','Handyman','Moving Services','Carpet Cleaning','Window Cleaning','Gym / Fitness Studio','Real Estate Agent','Insurance Agent','Towing Service','Locksmith','Junk Removal'];
+
+const CITIES = [
+  'Austin, TX','Dallas, TX','Houston, TX','San Antonio, TX','Fort Worth, TX','Waco, TX','Amarillo, TX','Lubbock, TX','El Paso, TX',
+  'Miami, FL','Orlando, FL','Tampa, FL','Jacksonville, FL','Hialeah, FL','Tallahassee, FL',
+  'Atlanta, GA','Savannah, GA','Charlotte, NC','Raleigh, NC','Nashville, TN','Memphis, TN',
+  'Phoenix, AZ','Mesa, AZ','Tucson, AZ','Scottsdale, AZ',
+  'Denver, CO','Colorado Springs, CO','Las Vegas, NV','Henderson, NV','Reno, NV',
+  'Los Angeles, CA','San Diego, CA','Sacramento, CA','Fresno, CA','San Jose, CA',
+  'Chicago, IL','Columbus, OH','Cleveland, OH','Indianapolis, IN','Detroit, MI',
+  'Boise, ID','Spokane, WA','Portland, OR','Seattle, WA','Tacoma, WA',
+  'Des Moines, IA','Little Rock, AR','Shreveport, LA','New Orleans, LA','Mobile, AL','Birmingham, AL',
+  'New York, NY','Philadelphia, PA','Richmond, VA','Virginia Beach, VA','Baltimore, MD','Washington, DC',
+  'Minneapolis, MN','Kansas City, MO','St. Louis, MO','Omaha, NE','Tulsa, OK','Oklahoma City, OK'
+];
+
 export function LeadGenerator({ settings, updateSettings, addLead }: LeadGeneratorProps) {
   const [state, setState] = useState<LeadGenState>({
     isHunting: false,
+    isHuntingNoWebsite: false,
     isNightShift: false,
     huntMode: 'specific',
     leadsFound: [],
@@ -49,6 +67,32 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     sessionLog: [],
     sortOrder: 'score-desc'
   });
+  const [nicheOpen, setNicheOpen] = useState(false);
+  const [cityOpen, setCityOpen] = useState(false);
+  const nicheRef = useRef<HTMLDivElement>(null);
+  const cityRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (nicheRef.current && !nicheRef.current.contains(e.target as Node)) setNicheOpen(false);
+      if (cityRef.current && !cityRef.current.contains(e.target as Node)) setCityOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Infinite Loop Logic
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    if (state.isHunting && state.huntMode === 'infinite') {
+      timeoutId = setTimeout(() => {
+        // Automatically trigger the next hunt after 5 seconds
+        toggleHunting('infinite', state.isHuntingNoWebsite, true);
+      }, 5000);
+    }
+    return () => clearTimeout(timeoutId);
+  }, [state.leadsFound]);
 
   const addLog = (action: string, status: 'info' | 'success' | 'warning' = 'info') => {
     setState(prev => ({
@@ -164,23 +208,23 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     });
   };
 
-  const toggleHunting = async (mode: 'specific' | 'roulette' | 'infinite' | 'no-website-only' = state.huntMode) => {
-    if (state.isHunting) {
-      setState(prev => ({ ...prev, isHunting: false }));
+  const toggleHunting = async (mode: 'specific' | 'roulette' | 'infinite' = state.huntMode, restrictNoWebsite = false, isAutoLoop = false) => {
+    if (state.isHunting && !isAutoLoop) {
+      setState(prev => ({ ...prev, isHunting: false, isHuntingNoWebsite: false }));
       return;
     }
 
-    if (!settings.geminiKey && !settings.googleMapsKey) {
+    if (!settings.geminiKey && !settings.googleMapsKey && !process.env.GEMINI_API_KEY && !process.env.GOOGLE_MAPS_API_KEY) {
       alert("Please configure either a Gemini API Key (for fictional leads) or a Google Maps API Key (for real leads) in Settings.");
       setState(prev => ({ ...prev, isSettingsOpen: true }));
       return;
     }
 
-    setState(prev => ({ ...prev, isHunting: true, error: null, leadsFound: [], huntMode: mode }));
+    setState(prev => ({ ...prev, isHunting: true, isHuntingNoWebsite: restrictNoWebsite, error: null, leadsFound: [], huntMode: mode }));
 
     try {
       const isRandom = mode === 'roulette' || mode === 'infinite';
-      const isNoWebsiteOnly = mode === 'no-website-only';
+      const isNoWebsiteOnly = restrictNoWebsite;
       
       const niches = ['Roofing', 'HVAC', 'Med Spa', 'Solar', 'Custom Remodeling', 'Personal Injury Law', 'Plumbing', 'Landscaping', 'Pest Control', 'Tree Service', 'Pool Cleaning', 'Fencing', 'Electrician', 'Concrete Contractor'];
       const cities = [
@@ -195,7 +239,8 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
 
       let formattedLeads: Lead[] = [];
 
-      if (settings.googleMapsKey) {
+      if (settings.googleMapsKey || process.env.GOOGLE_MAPS_API_KEY) {
+        const mapsKey = settings.googleMapsKey || process.env.GOOGLE_MAPS_API_KEY;
         // --- REAL LEADS VIA GOOGLE MAPS ---
         addLog(`Orchestrator: Initiating Deep Scrape for ${targetNiche} in ${targetCity}...`);
         
@@ -208,22 +253,22 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-Goog-Api-Key': settings.googleMapsKey,
+            'X-Goog-Api-Key': mapsKey!,
             'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.primaryTypeDisplayName'
           },
           body: JSON.stringify({
             textQuery: searchQuery,
-            maxResultCount: 20 // Fetch max allowed to dig deeper
+            maxResultCount: Math.min(Math.max(state.leadCount, 1), 20) // Google specifically caps at 20 max
           })
         });
 
         const data = await response.json();
         
-        if (!data.places) {
-           throw new Error("No places found or invalid Google Maps API key.");
+        if (data.error) {
+           throw new Error(data.error.message || "Invalid Google Maps API key.");
         }
 
-        let fetchedPlaces = data.places;
+        let fetchedPlaces = data.places || [];
 
         if (isNoWebsiteOnly) {
           fetchedPlaces = fetchedPlaces.filter((place: any) => !place.websiteUri);
@@ -268,7 +313,9 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
         });
       } else {
         // --- FICTIONAL LEADS VIA GEMINI ---
-        const ai = new GoogleGenAI({ apiKey: settings.geminiKey });
+        const apiKey = settings.geminiKey || process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error("API key not valid");
+        const ai = new GoogleGenAI({ apiKey });
         
         const targetContext = isRandom 
           ? `a randomly selected HIGH-TICKET niche (e.g., Roofing, HVAC, Med Spa, Solar, Custom Remodeling, Personal Injury Law) in a randomly selected US city. Specifically generate businesses that NEED HELP with their marketing (e.g., they have no website, bad reviews, or low word-of-mouth scores).`
@@ -397,12 +444,19 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
         });
       }
 
-      setState(prev => ({ ...prev, leadsFound: formattedLeads, isHunting: false }));
+      setState(prev => ({ 
+        ...prev, 
+        leadsFound: formattedLeads, 
+        isHunting: mode === 'infinite' // keep hunting if infinite loop
+      }));
     } catch (error: any) {
       console.error("Error generating leads:", error);
-      setState(prev => ({ ...prev, isHunting: false, error: error.message || "Failed to generate leads." }));
+      const msg = (error?.status === 400 || error.message.includes('API key not valid'))
+        ? "Invalid API key. Please check your Gemini API key in Settings or .env file." 
+        : error.message || "Failed to generate leads.";
+      setState(prev => ({ ...prev, isHunting: false, isHuntingNoWebsite: false, error: msg }));
       // Fallback to mock leads if API fails
-      setState(prev => ({ ...prev, leadsFound: mockLeads, isHunting: false }));
+      setState(prev => ({ ...prev, leadsFound: mockLeads, isHunting: false, isHuntingNoWebsite: false }));
     }
   };
 
@@ -466,7 +520,8 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
   };
 
   const handleDraftEmail = async (lead: Lead) => {
-    if (!settings.geminiKey) {
+    const apiKey = settings.geminiKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
       alert("Please configure your Gemini API Key in Settings to draft emails.");
       setState(prev => ({ ...prev, isSettingsOpen: true }));
       return;
@@ -474,7 +529,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
 
     try {
       addLog(`Closer: Crafting bespoke outreach for ${lead.businessName}...`);
-      const ai = new GoogleGenAI({ apiKey: settings.geminiKey });
+      const ai = new GoogleGenAI({ apiKey });
       
       const response = await ai.models.generateContent({
         model: 'gemini-1.5-flash',
@@ -584,7 +639,8 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
   };
 
   const handleGenerateSniperInsights = async (lead: Lead) => {
-    if (!settings.geminiKey) {
+    const apiKey = settings.geminiKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
       alert("Please configure your Gemini API Key in Settings to generate sniper insights.");
       setState(prev => ({ ...prev, isSettingsOpen: true }));
       return;
@@ -592,7 +648,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
 
     try {
       addLog(`Orchestrator: Generating Sniper Insights for ${lead.businessName}...`);
-      const ai = new GoogleGenAI({ apiKey: settings.geminiKey });
+      const ai = new GoogleGenAI({ apiKey });
 
       const prompt = `Analyze this local business lead and provide 'Sniper Insights' for a cold outreach:
       Business Name: ${lead.businessName}
@@ -650,7 +706,8 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
   };
 
   const handleBuildMockup = async (lead: Lead) => {
-    if (!settings.geminiKey) {
+    const apiKey = settings.geminiKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
       alert("Please configure your Gemini API Key in Settings to build mockups.");
       setState(prev => ({ ...prev, isSettingsOpen: true }));
       return;
@@ -658,7 +715,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
 
     try {
       alert(`Building AI website mockup for ${lead.businessName}... Please wait a few seconds.`);
-      const ai = new GoogleGenAI({ apiKey: settings.geminiKey });
+      const ai = new GoogleGenAI({ apiKey });
       const prompt = `Generate a single-file HTML landing page for a local business named "${lead.businessName}" in the "${lead.niche}" industry. 
       Use Tailwind CSS via CDN. Make it look modern, clean, and highly converting. 
       Include a hero section, services, and a contact form. 
@@ -789,36 +846,68 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
 
           {/* Form Fields */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
-            <div className="space-y-2">
+            {/* NICHE DROPDOWN */}
+            <div className="space-y-2" ref={nicheRef}>
               <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Target Niche</label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                <input 
-                  type="text" 
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none z-10" />
+                <input
+                  type="text"
                   placeholder="e.g. Plumber"
                   value={state.currentNiche}
-                  onChange={(e) => setState(prev => ({ ...prev, currentNiche: e.target.value }))}
-                  className="w-full pl-10 pr-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  onFocus={() => setNicheOpen(true)}
+                  onChange={(e) => { setState(prev => ({ ...prev, currentNiche: e.target.value })); setNicheOpen(true); }}
+                  className="w-full pl-10 pr-8 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                 />
+                <ChevronDown
+                  className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 cursor-pointer transition-transform ${nicheOpen ? 'rotate-180' : ''}`}
+                  onClick={() => setNicheOpen(o => !o)}
+                />
+                {nicheOpen && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-xl shadow-xl overflow-y-auto max-h-60">
+                    {NICHES.filter(n => n.toLowerCase().includes(state.currentNiche.toLowerCase()) || state.currentNiche === '').map(niche => (
+                      <button
+                        key={niche}
+                        onMouseDown={() => { setState(prev => ({ ...prev, currentNiche: niche })); setNicheOpen(false); }}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
+                      >
+                        {niche}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Industry</label>
-              <input 
-                type="text" 
-                placeholder="e.g. Home Services"
-                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-              />
-            </div>
-            <div className="space-y-2">
+            {/* CITY DROPDOWN */}
+            <div className="space-y-2" ref={cityRef}>
               <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Location</label>
-              <input 
-                type="text" 
-                placeholder="Austin, TX"
-                value={state.currentCity}
-                onChange={(e) => setState(prev => ({ ...prev, currentCity: e.target.value }))}
-                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Austin, TX"
+                  value={state.currentCity}
+                  onFocus={() => setCityOpen(true)}
+                  onChange={(e) => { setState(prev => ({ ...prev, currentCity: e.target.value })); setCityOpen(true); }}
+                  className="w-full px-4 pr-8 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                />
+                <ChevronDown
+                  className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 cursor-pointer transition-transform ${cityOpen ? 'rotate-180' : ''}`}
+                  onClick={() => setCityOpen(o => !o)}
+                />
+                {cityOpen && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-xl shadow-xl overflow-y-auto max-h-60">
+                    {CITIES.filter(c => c.toLowerCase().includes(state.currentCity.toLowerCase()) || state.currentCity === '').map(city => (
+                      <button
+                        key={city}
+                        onMouseDown={() => { setState(prev => ({ ...prev, currentCity: city })); setCityOpen(false); }}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
+                      >
+                        {city}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Lead Count</label>
@@ -830,7 +919,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                   className="w-24 px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                 />
                 <button 
-                  onClick={() => toggleHunting(state.huntMode)}
+                  onClick={() => toggleHunting(state.huntMode, false)}
                   className={`flex-1 py-3 px-6 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all ${
                     state.isHunting 
                       ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' 
@@ -839,7 +928,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                         : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200'
                   }`}
                 >
-                  {state.isHunting && state.huntMode !== 'no-website-only' ? (
+                  {state.isHunting && !state.isHuntingNoWebsite ? (
                     <>
                       <Pause className="w-5 h-5" />
                       <span>Stop Hunting</span>
@@ -852,15 +941,15 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                   )}
                 </button>
                 <button
-                  onClick={() => toggleHunting('no-website-only')}
+                  onClick={() => toggleHunting(state.huntMode, true)}
                   className={`py-3 px-6 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all ${
-                    state.isHunting && state.huntMode === 'no-website-only'
+                    state.isHunting && state.isHuntingNoWebsite
                       ? 'bg-rose-500 text-white shadow-lg shadow-rose-200'
                       : 'bg-amber-500 text-white hover:bg-amber-600 shadow-lg shadow-amber-200'
                   }`}
                   title="Strictly hunt for businesses that do NOT have a website"
                 >
-                  {state.isHunting && state.huntMode === 'no-website-only' ? (
+                  {state.isHunting && state.isHuntingNoWebsite ? (
                     <>
                       <Pause className="w-5 h-5" />
                       <span>Stop</span>
@@ -1335,8 +1424,14 @@ function LeadCard({
                   {lead.isSaved ? <CheckCircle className="w-3 h-3" /> : <Save className="w-3 h-3" />}
                   <span>{lead.isSaved ? 'Saved' : 'Save'}</span>
                 </button>
-                <button className="p-2 bg-zinc-100 text-zinc-400 rounded-xl hover:text-indigo-600 transition-colors"><Facebook className="w-4 h-4" /></button>
-                <button className="p-2 bg-zinc-100 text-zinc-400 rounded-xl hover:text-indigo-600 transition-colors"><Instagram className="w-4 h-4" /></button>
+                <a href={`https://www.linkedin.com/search/results/companies/?keywords=${encodeURIComponent(lead.businessName + ' ' + lead.address)}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-zinc-100 text-zinc-400 rounded-xl hover:text-blue-600 transition-colors" title="Search LinkedIn"><Linkedin className="w-4 h-4" /></a>
+                <a href={`https://www.facebook.com/search/pages/?q=${encodeURIComponent(lead.businessName + ' ' + lead.address)}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-zinc-100 text-zinc-400 rounded-xl hover:text-blue-600 transition-colors" title="Search Facebook"><Facebook className="w-4 h-4" /></a>
+                <a href={`https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(lead.businessName)}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-zinc-100 text-zinc-400 rounded-xl hover:text-pink-600 transition-colors" title="Search Instagram"><Instagram className="w-4 h-4" /></a>
+                {lead.url !== 'No website' ? (
+                  <a href={`https://hunter.io/search/${lead.url.replace(/^https?:\/\//, '').split('/')[0]}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-zinc-100 text-zinc-400 rounded-xl hover:text-emerald-600 transition-colors" title="Find Emails on Hunter.io"><Mail className="w-4 h-4" /></a>
+                ) : (
+                  <a href={`https://www.google.com/search?q=${encodeURIComponent(lead.businessName + ' ' + lead.address + ' email contact')}`} target="_blank" rel="noopener noreferrer" className="p-2 bg-zinc-100 text-zinc-400 rounded-xl hover:text-emerald-600 transition-colors" title="Search Email on Google"><Mail className="w-4 h-4" /></a>
+                )}
               </div>
               <button onClick={onSendToAutomation} className="w-full py-3 bg-zinc-900 text-white rounded-xl font-bold text-xs flex items-center justify-center space-x-2 hover:bg-black transition-all">
                 <Send className="w-4 h-4" />

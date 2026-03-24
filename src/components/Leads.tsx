@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { AppState, Lead, LeadStatus } from '../types';
-import { Plus, Search, MoreVertical, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { AppState, Lead, LeadStatus, AppSettings } from '../types';
+import { Plus, Search, MoreVertical, ExternalLink, ChevronDown, ChevronUp, Download, Mail } from 'lucide-react';
+import Papa from 'papaparse';
+import { GoogleGenAI } from '@google/genai';
 
 interface LeadsProps {
   state: AppState;
+  settings: AppSettings;
   addLead: (lead: Omit<Lead, 'id'>) => void;
   updateLead: (id: string, updates: Partial<Lead>) => void;
 }
@@ -20,7 +23,7 @@ const getSafeUrl = (url: string) => {
   return '#';
 };
 
-export function Leads({ state, addLead, updateLead }: LeadsProps) {
+export function Leads({ state, settings, addLead, updateLead }: LeadsProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
   const [newLead, setNewLead] = useState<Partial<Lead>>({
@@ -52,6 +55,84 @@ export function Leads({ state, addLead, updateLead }: LeadsProps) {
     setExpandedLeadId(expandedLeadId === id ? null : id);
   };
 
+  const handleExportCsv = () => {
+    if (state.leads.length === 0) {
+      alert("No leads to export.");
+      return;
+    }
+
+    const csvData = state.leads.map(lead => ({
+      BusinessName: lead.businessName,
+      Website: lead.url,
+      Niche: lead.niche,
+      Status: lead.status,
+      Address: lead.address || '',
+      Phone: lead.phone || '',
+      DecisionMakerName: lead.decisionMaker?.name || '',
+      DecisionMakerTitle: lead.decisionMaker?.title || '',
+      Emails: lead.emails?.join(', ') || '',
+      Score: lead.score || '',
+      Value: lead.value || 0,
+      ContactDate: lead.contactDate || '',
+      Notes: lead.notes || ''
+    }));
+
+    const csv = Papa.unparse(csvData);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `crm_leads_export_${new Date().getTime()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDraftEmail = async (lead: Lead) => {
+    const apiKey = settings?.geminiKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      alert("Please configure your Gemini API Key in Settings to draft emails.");
+      return;
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-1.5-flash',
+        config: {
+          systemInstruction: `You are "The Closer," a world-class B2B copywriter. 
+          Copywriting Directives:
+          1. Smart Brevity: Use short sentences, active voice.
+          2. Hyper-Personalization: Use the specific "Buying Signals".
+          3. Frictionless CTA: End with a low-friction question.
+          
+          Output Format:
+          Subject: [Subject Line]
+          ---
+          [Email Body]`,
+        },
+        contents: `Draft a cold email to ${lead.decisionMaker?.name || 'the owner'} at ${lead.businessName}. 
+        Buying Signal: ${lead.sniperInsights?.icebreaker || 'I noticed your business online.'}
+        BANT/Need: ${lead.bant?.need || 'Scaling with AI Automation'}
+        Offer: A free AI-powered lead generation system.`
+      });
+
+      const fullText = response.text || '';
+      const subjectMatch = fullText.match(/Subject: (.*)/i);
+      const bodyMatch = fullText.split('---')[1];
+      
+      const subject = subjectMatch ? subjectMatch[1] : `Quick question for ${lead.businessName}`;
+      const emailBody = bodyMatch ? bodyMatch.trim() : fullText;
+      const toEmail = lead.emails && lead.emails.length > 0 ? lead.emails[0] : '';
+      
+      window.open(`mailto:${toEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`);
+    } catch (error) {
+      console.error("Error drafting email:", error);
+      alert("Failed to draft email. Check console.");
+    }
+  };
+
   return (
     <div className="p-4 lg:p-8 max-w-6xl mx-auto space-y-8">
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -59,13 +140,22 @@ export function Leads({ state, addLead, updateLead }: LeadsProps) {
           <h2 className="text-2xl lg:text-3xl font-bold text-zinc-900 tracking-tight">CRM & Leads</h2>
           <p className="text-zinc-500 mt-2">Track your 5 daily contact forms and Loom outreach.</p>
         </div>
-        <button 
-          onClick={() => setIsAdding(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center space-x-2 w-full sm:w-auto"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Add Lead</span>
-        </button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button 
+            onClick={handleExportCsv}
+            className="bg-zinc-100 text-zinc-700 px-4 py-2 rounded-xl font-medium hover:bg-zinc-200 transition-colors flex items-center justify-center space-x-2 flex-1 sm:flex-none"
+          >
+            <Download className="w-5 h-5" />
+            <span>Export CSV</span>
+          </button>
+          <button 
+            onClick={() => setIsAdding(true)}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center space-x-2 flex-1 sm:flex-none"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Add Lead</span>
+          </button>
+        </div>
       </header>
 
       {isAdding && (
@@ -226,11 +316,21 @@ export function Leads({ state, addLead, updateLead }: LeadsProps) {
                               <div>
                                 <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Notes</label>
                                 <textarea 
-                                  className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none h-28 resize-none"
+                                  className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none h-16 resize-none"
                                   placeholder="Add notes about this lead..."
                                   value={lead.notes || ''}
                                   onChange={(e) => updateLead(lead.id, { notes: e.target.value })}
                                 />
+                              </div>
+                              <div className="mt-2">
+                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">AI Actions</label>
+                                <button 
+                                  onClick={() => handleDraftEmail(lead)}
+                                  className="w-full py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg font-medium text-sm flex items-center justify-center space-x-2 transition-colors border border-indigo-100"
+                                >
+                                  <Mail className="w-4 h-4" />
+                                  <span>One-Click Draft Email</span>
+                                </button>
                               </div>
                             </div>
                           </div>
