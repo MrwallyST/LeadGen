@@ -285,6 +285,19 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
           else if (reviews < 20) angle = "Needs More Reviews / SEO";
           else angle = "Scale with AI Automation / Paid Ads";
 
+          const guessedEmails: string[] = [];
+          if (hasWebsite) {
+            try {
+              const url = new URL(place.websiteUri);
+              const domain = url.hostname.replace(/^www\./, '');
+              guessedEmails.push(`info@${domain}`);
+              guessedEmails.push(`contact@${domain}`);
+              guessedEmails.push(`owner@${domain}`);
+            } catch (e) {
+              // ignore invalid URLs
+            }
+          }
+
           return {
             id: `gmaps-${place.id || Date.now()}-${index}`,
             businessName: place.displayName?.text || 'Unknown Business',
@@ -303,7 +316,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
               name: 'Owner / Manager',
               title: 'Decision Maker'
             },
-            emails: [],
+            emails: guessedEmails,
             sniperInsights: {
               ownerVibe: rating >= 4.5 ? 'Proud of their service, protective of brand.' : 'Likely stressed, needs operational help.',
               bestSalesAngle: angle,
