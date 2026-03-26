@@ -125,6 +125,273 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     });
   };
 
+
+  const toggleHunting = async (mode: 'specific' | 'roulette' | 'infinite' = state.huntMode, restrictNoWebsite = false, isAutoLoop = false) => {
+    if (state.isHunting && !isAutoLoop) {
+      setState(prev => ({ ...prev, isHunting: false, isHuntingNoWebsite: false }));
+      return;
+    }
+
+    if (!settings.geminiKey && !settings.googleMapsKey && !process.env.GEMINI_API_KEY && !process.env.GOOGLE_MAPS_API_KEY) {
+      alert("Please configure either a Gemini API Key (for fictional leads) or a Google Maps API Key (for real leads) in Settings.");
+      setState(prev => ({ ...prev, isSettingsOpen: true }));
+      return;
+    }
+
+    setState(prev => ({ ...prev, isHunting: true, isHuntingNoWebsite: restrictNoWebsite, error: null, leadsFound: [], huntMode: mode }));
+
+    try {
+      const isRandom = mode === 'roulette' || mode === 'infinite';
+      const isNoWebsiteOnly = restrictNoWebsite;
+      
+      const niches = ['Roofing', 'HVAC', 'Med Spa', 'Solar', 'Custom Remodeling', 'Personal Injury Law', 'Plumbing', 'Landscaping', 'Pest Control', 'Tree Service', 'Pool Cleaning', 'Fencing', 'Electrician', 'Concrete Contractor'];
+      const cities = [
+        // Tier 1
+        'Austin, TX', 'Denver, CO', 'Nashville, TN', 'Charlotte, NC', 'Orlando, FL', 'Phoenix, AZ', 'Dallas, TX', 'Atlanta, GA', 'Las Vegas, NV', 'Miami, FL',
+        // Tier 2 (More likely to have no-website businesses)
+        'Waco, TX', 'Mesa, AZ', 'Henderson, NV', 'Garland, TX', 'Hialeah, FL', 'Reno, NV', 'Boise, ID', 'Spokane, WA', 'Des Moines, IA', 'Little Rock, AR', 'Amarillo, TX', 'Shreveport, LA', 'Mobile, AL'
+      ];
+      
+      const targetNiche = isRandom ? niches[Math.floor(Math.random() * niches.length)] : state.currentNiche;
+      const targetCity = isRandom ? cities[Math.floor(Math.random() * cities.length)] : state.currentCity;
+
+      let formattedLeads: Lead[] = [];
+
+      if (settings.googleMapsKey || process.env.GOOGLE_MAPS_API_KEY) {
+        const mapsKey = settings.googleMapsKey || process.env.GOOGLE_MAPS_API_KEY;
+        // --- REAL LEADS VIA GOOGLE MAPS ---
+        addLog(`Orchestrator: Initiating Deep Scrape for ${targetNiche} in ${targetCity}...`);
+        
+        // Use modifiers to bypass highly optimized businesses and find the "hidden gems"
+        const searchModifiers = ['', 'independent', 'local', 'affordable', 'family owned'];
+        const modifier = searchModifiers[Math.floor(Math.random() * searchModifiers.length)];
+        const searchQuery = modifier ? `${modifier} ${targetNiche} in ${targetCity}` : `${targetNiche} in ${targetCity}`;
+        
+        const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': mapsKey!,
+            'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.primaryTypeDisplayName'
+          },
+          body: JSON.stringify({
+            textQuery: searchQuery,
+            maxResultCount: Math.min(Math.max(state.leadCount, 1), 20) // Google specifically caps at 20 max
+          })
+        });
+
+        const data = await response.json();
+        
+        if (data.error) {
+           throw new Error(data.error.message || "Invalid Google Maps API key.");
+        }
+
+        let fetchedPlaces = data.places || [];
+
+        if (isNoWebsiteOnly) {
+          fetchedPlaces = fetchedPlaces.filter((place: any) => !place.websiteUri);
+        }
+
+        formattedLeads = fetchedPlaces.map((place: any, index: number) => {
+          const hasWebsite = !!place.websiteUri;
+          const rating = place.rating || 0;
+          const reviews = place.userRatingCount || 0;
+          
+          let angle = "General Growth";
+          if (!hasWebsite) angle = "Needs a Website ASAP";
+          else if (rating < 4.0) angle = "Reputation Management (Bad Reviews)";
+          else if (reviews < 20) angle = "Needs More Reviews / SEO";
+          else angle = "Scale with AI Automation / Paid Ads";
+
+          const guessedEmails: string[] = [];
+          if (hasWebsite) {
+            try {
+              const url = new URL(place.websiteUri);
+              const domain = url.hostname.replace(/^www\./, '');
+              guessedEmails.push(`info@${domain}`);
+              guessedEmails.push(`contact@${domain}`);
+              guessedEmails.push(`owner@${domain}`);
+            } catch (e) {
+              // ignore invalid URLs
+            }
+          }
+
+          return {
+            id: `gmaps-${place.id || Date.now()}-${index}`,
+            businessName: place.displayName?.text || 'Unknown Business',
+            url: place.websiteUri || 'No website',
+            address: place.formattedAddress || 'No address',
+            phone: place.nationalPhoneNumber || 'No phone',
+            niche: place.primaryTypeDisplayName?.text || targetNiche,
+            status: 'New',
+            isSaved: state.isNightShift,
+            score: rating,
+            wordOfMouth: {
+              score: rating,
+              summary: `${reviews} Google Reviews`
+            },
+            decisionMaker: {
+              name: 'Owner / Manager',
+              title: 'Decision Maker'
+            },
+            emails: guessedEmails,
+            sniperInsights: {
+              ownerVibe: rating >= 4.5 ? 'Proud of their service, protective of brand.' : 'Likely stressed, needs operational help.',
+              bestSalesAngle: angle,
+              icebreaker: hasWebsite ? `Loved checking out your site, but noticed a missed opportunity.` : `Noticed you don't have a website yet, how are you getting leads?`
+            }
+          };
+        });
+      } else {
+        // --- FICTIONAL LEADS VIA GEMINI ---
+        const apiKey = settings.geminiKey || process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error("API key not valid");
+        const ai = new GoogleGenAI({ apiKey });
+        
+        const targetContext = isRandom 
+          ? `a randomly selected HIGH-TICKET niche (e.g., Roofing, HVAC, Med Spa, Solar, Custom Remodeling, Personal Injury Law) in a randomly selected US city. Specifically generate businesses that NEED HELP with their marketing (e.g., they have no website, bad reviews, or low word-of-mouth scores).`
+          : `the niche '${state.currentNiche}' in '${state.currentCity}'`;
+
+        const noWebsiteInstruction = isNoWebsiteOnly
+          ? `CRITICAL - NO WEBSITE LEADS: 100% of the generated leads MUST NOT have a website (set the 'url' field to an empty string ""). This is a strict requirement.`
+          : `CRITICAL - NO WEBSITE LEADS: At least 40% of the generated leads MUST NOT have a website (set the 'url' field to an empty string ""). This is mandatory so the user can pitch web design services.`;
+
+        const prompt = `Generate a JSON array of ${state.leadCount} realistic, fictional local business leads for ${targetContext}. 
+        Persona: You are "The Prospector," a lead qualification specialist.
+        Directives:
+        1. BANT Framework: Qualify leads based on Budget, Authority, Need, and Timeline.
+        2. Signal Detection: Identify specific pain points (e.g., missing website, low reviews, slow speed).
+        3. ${noWebsiteInstruction}
+        4. CRITICAL - LOW REVIEWS: At least 30% must have fewer than 5 reviews.
+        5. Zero Hallucination: Ensure data looks authentic for the specified location.
+
+        Include the following fields for each lead:
+        - businessName (string)
+        - url (string)
+        - address (string)
+        - phone (string)
+        - niche (string)
+        - decisionMaker (object with 'name' and 'title')
+        - emails (array of strings)
+        - score (number 1-10)
+        - bant (object with 'budget', 'authority', 'need', 'timeline' strings)
+        - signals (object with 'missingWebsite', 'lowReviews', 'slowSpeed', 'noCta' booleans)
+        - wordOfMouth (object with 'score' and 'summary')
+        - sniperInsights (object with 'ownerVibe', 'bestSalesAngle', 'icebreaker')
+        Return ONLY valid JSON array.`;
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-1.5-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  businessName: { type: Type.STRING },
+                  url: { type: Type.STRING },
+                  address: { type: Type.STRING },
+                  phone: { type: Type.STRING },
+                  niche: { type: Type.STRING },
+                  decisionMaker: {
+                    type: Type.OBJECT,
+                    properties: {
+                      name: { type: Type.STRING },
+                      title: { type: Type.STRING }
+                    }
+                  },
+                  emails: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                  },
+                  score: { type: Type.NUMBER },
+                  bant: {
+                    type: Type.OBJECT,
+                    properties: {
+                      budget: { type: Type.STRING },
+                      authority: { type: Type.STRING },
+                      need: { type: Type.STRING },
+                      timeline: { type: Type.STRING }
+                    }
+                  },
+                  signals: {
+                    type: Type.OBJECT,
+                    properties: {
+                      missingWebsite: { type: Type.BOOLEAN },
+                      lowReviews: { type: Type.BOOLEAN },
+                      slowSpeed: { type: Type.BOOLEAN },
+                      noCta: { type: Type.BOOLEAN }
+                    }
+                  },
+                  wordOfMouth: {
+                    type: Type.OBJECT,
+                    properties: {
+                      score: { type: Type.NUMBER },
+                      summary: { type: Type.STRING }
+                    }
+                  },
+                  sniperInsights: {
+                    type: Type.OBJECT,
+                    properties: {
+                      ownerVibe: { type: Type.STRING },
+                      bestSalesAngle: { type: Type.STRING },
+                      icebreaker: { type: Type.STRING }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        const generatedLeads = JSON.parse(response.text || '[]');
+        formattedLeads = generatedLeads.map((lead: any, index: number) => ({
+          id: `generated-${Date.now()}-${index}`,
+          ...lead,
+          niche: lead.niche || state.currentNiche,
+          status: 'New',
+          isSaved: state.isNightShift
+        }));
+      }
+
+      if (state.isNightShift) {
+        formattedLeads.forEach(lead => {
+          addLead({
+            businessName: lead.businessName,
+            url: lead.url,
+            niche: lead.niche,
+            status: 'New',
+            address: lead.address,
+            phone: lead.phone,
+            decisionMaker: lead.decisionMaker,
+            emails: lead.emails,
+            wordOfMouth: lead.wordOfMouth,
+            sniperInsights: lead.sniperInsights,
+            score: lead.score,
+            value: 1000
+          });
+        });
+      }
+
+      setState(prev => ({ 
+        ...prev, 
+        leadsFound: formattedLeads, 
+        isHunting: mode === 'infinite' // keep hunting if infinite loop
+      }));
+    } catch (error: any) {
+      console.error("Error generating leads:", error);
+      const msg = (error?.status === 400 || error.message.includes('API key not valid'))
+        ? "Invalid API key. Please check your Gemini API key in Settings or .env file." 
+        : error.message || "Failed to generate leads.";
+      setState(prev => ({ ...prev, isHunting: false, isHuntingNoWebsite: false, error: msg }));
+      // Fallback to mock leads if API fails
+      setState(prev => ({ ...prev, leadsFound: mockLeads, isHunting: false, isHuntingNoWebsite: false }));
+    }
+  };
+
+
   const handleSaveLead = (lead: Lead) => {
     addLead({
       businessName: lead.businessName,
