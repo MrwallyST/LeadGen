@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Zap, Target, Globe, Mail, Shield, Settings, Play, Pause,
   RefreshCw, Plus, Trash2, ExternalLink, Search, AlertCircle,
   Send, Copy, CheckCircle, ChevronDown, ChevronUp, Save,
   Facebook, Instagram, Linkedin, Download, Layout, Eye, Rocket,
-  X, Map, Link as LinkIcon
+  X, Map, Link as LinkIcon, Phone, SlidersHorizontal, Flame,
+  BookmarkCheck, TrendingUp, Filter
 } from 'lucide-react';
 import { AppSettings, Lead } from '../types';
 import { useLeadHunter } from '../hooks/useLeadHunter';
@@ -26,6 +27,8 @@ interface LeadGenState {
   expandedLeadId: string | null;
   isSettingsOpen: boolean;
   sortOrder: 'score-desc' | 'score-asc' | 'newest';
+  minScore: number;
+  searchQuery: string;
 }
 
 const NICHES = ['Plumbers','HVAC','Roofers','Electricians','Landscapers','Pest Control','Tree Service','Pool Cleaning','Fencing','Concrete Contractor','Solar','Med Spa','Custom Remodeling','Personal Injury Law','Chiropractors','Dentists','Auto Repair','Pressure Washing','Painters','Flooring','Handyman','Moving Services','Carpet Cleaning','Window Cleaning','Gym / Fitness Studio','Real Estate Agent','Insurance Agent','Towing Service','Locksmith','Junk Removal'];
@@ -53,12 +56,34 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     activeListTab: 'all',
     expandedLeadId: null,
     isSettingsOpen: false,
-    sortOrder: 'score-desc'
+    sortOrder: 'score-desc',
+    minScore: 0,
+    searchQuery: ''
   });
   const [nicheOpen, setNicheOpen] = useState(false);
   const [cityOpen, setCityOpen] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const nicheRef = useRef<HTMLDivElement>(null);
   const cityRef = useRef<HTMLDivElement>(null);
+
+  const [recentNiches, setRecentNiches] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('lg_recent_niches') || '[]'); } catch { return []; }
+  });
+  const [recentCities, setRecentCities] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('lg_recent_cities') || '[]'); } catch { return []; }
+  });
+
+  const addRecentNiche = (niche: string) => {
+    const updated = [niche, ...recentNiches.filter(n => n !== niche)].slice(0, 5);
+    setRecentNiches(updated);
+    localStorage.setItem('lg_recent_niches', JSON.stringify(updated));
+  };
+
+  const addRecentCity = (city: string) => {
+    const updated = [city, ...recentCities.filter(c => c !== city)].slice(0, 5);
+    setRecentCities(updated);
+    localStorage.setItem('lg_recent_cities', JSON.stringify(updated));
+  };
 
   const {
     isHunting,
@@ -125,7 +150,14 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     });
   };
 
-  const handleSaveLead = (lead: Lead) => {
+  const handleSaveLead = (lead: Lead, skipDupCheck = false) => {
+    if (!skipDupCheck) {
+      const isDuplicate = leadsFound.some(
+        l => l.id !== lead.id && l.isSaved &&
+          l.businessName.toLowerCase() === lead.businessName.toLowerCase()
+      );
+      if (isDuplicate && !confirm(`"${lead.businessName}" looks like it might already be saved. Save anyway?`)) return;
+    }
     addLead({
       businessName: lead.businessName,
       url: lead.url,
@@ -141,6 +173,13 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
       value: 1000
     });
     markLeadSaved(lead.id);
+  };
+
+  const handleSaveAllVisible = () => {
+    const toSave = filteredLeads.filter(l => !l.isSaved);
+    if (toSave.length === 0) return;
+    if (!confirm(`Save all ${toSave.length} visible leads to CRM?`)) return;
+    toSave.forEach(l => handleSaveLead(l, true));
   };
 
   const handleSendToAutomation = async (lead: Lead) => {
@@ -395,20 +434,34 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
     }
   };
 
-  const filteredLeads = leadsFound.filter(lead => {
-    if (state.activeListTab === 'all') return true;
-    
-    const hasNoWebsite = !lead.url || lead.url.trim() === '' || lead.url.toLowerCase().includes('no website') || lead.url.toLowerCase().includes('none');
-    
-    if (state.activeListTab === 'has-website') return !hasNoWebsite;
-    if (state.activeListTab === 'no-website') return hasNoWebsite;
-    if (state.activeListTab === 'saved') return lead.isSaved;
-    return true;
-  }).sort((a, b) => {
-    if (state.sortOrder === 'score-desc') return (b.score || 0) - (a.score || 0);
-    if (state.sortOrder === 'score-asc') return (a.score || 0) - (b.score || 0);
-    return 0; // newest first is default order in array
-  });
+  const filteredLeads = useMemo(() => {
+    const q = state.searchQuery.toLowerCase().trim();
+    return leadsFound.filter(lead => {
+      const noWebsite = !lead.url || lead.url.trim() === '' || lead.url.toLowerCase().includes('no website') || lead.url.toLowerCase().includes('none');
+      if (state.activeListTab === 'has-website' && noWebsite) return false;
+      if (state.activeListTab === 'no-website' && !noWebsite) return false;
+      if (state.activeListTab === 'saved' && !lead.isSaved) return false;
+      if ((lead.score || 0) < state.minScore) return false;
+      if (q && !lead.businessName.toLowerCase().includes(q) &&
+          !(lead.niche || '').toLowerCase().includes(q) &&
+          !(lead.address || '').toLowerCase().includes(q) &&
+          !(lead.phone || '').toLowerCase().includes(q)) return false;
+      return true;
+    }).sort((a, b) => {
+      if (state.sortOrder === 'score-desc') return (b.score || 0) - (a.score || 0);
+      if (state.sortOrder === 'score-asc') return (a.score || 0) - (b.score || 0);
+      return 0;
+    });
+  }, [leadsFound, state.activeListTab, state.minScore, state.searchQuery, state.sortOrder]);
+
+  const huntStats = useMemo(() => {
+    if (leadsFound.length === 0) return null;
+    const avgScore = leadsFound.reduce((s, l) => s + (l.score || 0), 0) / leadsFound.length;
+    const noWebCount = leadsFound.filter(l => !l.url || l.url.toLowerCase().includes('no website')).length;
+    const hotCount = leadsFound.filter(l => (l.score || 0) >= 8).length;
+    const savedCount = leadsFound.filter(l => l.isSaved).length;
+    return { avgScore: avgScore.toFixed(1), noWebCount, hotCount, savedCount, total: leadsFound.length };
+  }, [leadsFound]);
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 bg-zinc-50 min-h-screen">
@@ -521,6 +574,18 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                 />
                 {nicheOpen && (
                   <div className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-xl shadow-xl overflow-y-auto max-h-60">
+                    {recentNiches.length > 0 && (
+                      <>
+                        <p className="px-4 pt-2 pb-1 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Recent</p>
+                        {recentNiches.map(niche => (
+                          <button key={`r-${niche}`} onMouseDown={() => { setState(prev => ({ ...prev, currentNiche: niche })); setNicheOpen(false); }}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-indigo-50 hover:text-indigo-700 transition-colors flex items-center space-x-2">
+                            <RefreshCw className="w-3 h-3 text-zinc-400" /><span>{niche}</span>
+                          </button>
+                        ))}
+                        <div className="border-t border-zinc-100 my-1" />
+                      </>
+                    )}
                     {NICHES.filter(n => n.toLowerCase().includes(state.currentNiche.toLowerCase()) || state.currentNiche === '').map(niche => (
                       <button
                         key={niche}
@@ -552,6 +617,18 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                 />
                 {cityOpen && (
                   <div className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-xl shadow-xl overflow-y-auto max-h-60">
+                    {recentCities.length > 0 && (
+                      <>
+                        <p className="px-4 pt-2 pb-1 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Recent</p>
+                        {recentCities.map(city => (
+                          <button key={`r-${city}`} onMouseDown={() => { setState(prev => ({ ...prev, currentCity: city })); setCityOpen(false); }}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-indigo-50 hover:text-indigo-700 transition-colors flex items-center space-x-2">
+                            <RefreshCw className="w-3 h-3 text-zinc-400" /><span>{city}</span>
+                          </button>
+                        ))}
+                        <div className="border-t border-zinc-100 my-1" />
+                      </>
+                    )}
                     {CITIES.filter(c => c.toLowerCase().includes(state.currentCity.toLowerCase()) || state.currentCity === '').map(city => (
                       <button
                         key={city}
@@ -574,8 +651,8 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                   onChange={(e) => setState(prev => ({ ...prev, leadCount: parseInt(e.target.value) }))}
                   className="w-24 px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                 />
-                <button 
-                  onClick={() => toggleHunting(huntMode, false)}
+                <button
+                  onClick={() => { addRecentNiche(state.currentNiche); addRecentCity(state.currentCity); toggleHunting(huntMode, false); }}
                   className={`flex-1 py-3 px-6 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all ${
                     isHunting 
                       ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' 
@@ -668,44 +745,103 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
 
       {/* Lead List Section */}
       <section className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center bg-zinc-100 p-1 rounded-xl">
-            {[
-              { id: 'all', label: 'All Leads' },
-              { id: 'has-website', label: 'Has Website (Local)' },
-              { id: 'no-website', label: 'No Website (Design)' },
-              { id: 'saved', label: 'Saved (0)' },
-              { id: 'playbook', label: 'Playbook' }
-            ].map((tab) => (
-              <button 
-                key={tab.id}
-                onClick={() => setState(prev => ({ ...prev, activeListTab: tab.id as any }))}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${state.activeListTab === tab.id ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
-              >
-                {tab.label}
-              </button>
-            ))}
+        {/* Hunt Stats Bar */}
+        {huntStats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl border border-zinc-200 p-4 flex items-center space-x-3">
+              <div className="w-9 h-9 bg-indigo-50 rounded-xl flex items-center justify-center"><TrendingUp className="w-5 h-5 text-indigo-600" /></div>
+              <div><p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Avg Score</p><p className="text-xl font-black text-zinc-900">{huntStats.avgScore}<span className="text-xs text-zinc-400">/10</span></p></div>
+            </div>
+            <div className="bg-white rounded-2xl border border-zinc-200 p-4 flex items-center space-x-3">
+              <div className="w-9 h-9 bg-amber-50 rounded-xl flex items-center justify-center"><Flame className="w-5 h-5 text-amber-500" /></div>
+              <div><p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Hot Leads</p><p className="text-xl font-black text-zinc-900">{huntStats.hotCount}<span className="text-xs text-zinc-400"> score 8+</span></p></div>
+            </div>
+            <div className="bg-white rounded-2xl border border-zinc-200 p-4 flex items-center space-x-3">
+              <div className="w-9 h-9 bg-rose-50 rounded-xl flex items-center justify-center"><Globe className="w-5 h-5 text-rose-500" /></div>
+              <div><p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">No Website</p><p className="text-xl font-black text-zinc-900">{huntStats.noWebCount}<span className="text-xs text-zinc-400"> leads</span></p></div>
+            </div>
+            <div className="bg-white rounded-2xl border border-zinc-200 p-4 flex items-center space-x-3">
+              <div className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center"><BookmarkCheck className="w-5 h-5 text-emerald-600" /></div>
+              <div><p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Saved</p><p className="text-xl font-black text-zinc-900">{huntStats.savedCount}<span className="text-xs text-zinc-400">/{huntStats.total}</span></p></div>
+            </div>
           </div>
-          
-          <div className="flex items-center space-x-4">
-            <select
-              value={state.sortOrder}
-              onChange={(e) => setState(prev => ({ ...prev, sortOrder: e.target.value as LeadGenState['sortOrder'] }))}
-              className="bg-white border border-zinc-200 rounded-xl px-4 py-2 text-xs font-bold text-zinc-600 outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="score-desc">Sort AI Score (High to Low)</option>
-              <option value="score-asc">Sort AI Score (Low to High)</option>
-              <option value="newest">Newest First</option>
-            </select>
-            <label className="flex items-center space-x-2 px-4 py-2 bg-white border border-zinc-200 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-50 transition-colors cursor-pointer">
-              <Plus className="w-4 h-4" />
-              <span>Import CSV</span>
-              <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
-            </label>
-            <button onClick={handleExportCsv} className="flex items-center space-x-2 px-4 py-2 bg-white border border-zinc-200 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-50 transition-colors">
-              <Download className="w-4 h-4" />
-              <span>Export CSV</span>
-            </button>
+        )}
+
+        <div className="flex flex-col gap-4">
+          {/* Top row: tabs + actions */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center bg-zinc-100 p-1 rounded-xl overflow-x-auto">
+              {[
+                { id: 'all', label: `All (${leadsFound.length})` },
+                { id: 'has-website', label: 'Has Website' },
+                { id: 'no-website', label: 'No Website' },
+                { id: 'saved', label: `Saved (${leadsFound.filter(l => l.isSaved).length})` },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setState(prev => ({ ...prev, activeListTab: tab.id as any }))}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${state.activeListTab === tab.id ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center space-x-3 flex-wrap gap-2">
+              {filteredLeads.filter(l => !l.isSaved).length > 0 && (
+                <button onClick={handleSaveAllVisible}
+                  className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm">
+                  <BookmarkCheck className="w-4 h-4" />
+                  <span>Save All Visible ({filteredLeads.filter(l => !l.isSaved).length})</span>
+                </button>
+              )}
+              <select
+                value={state.sortOrder}
+                onChange={(e) => setState(prev => ({ ...prev, sortOrder: e.target.value as LeadGenState['sortOrder'] }))}
+                className="bg-white border border-zinc-200 rounded-xl px-4 py-2 text-xs font-bold text-zinc-600 outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="score-desc">Score: High → Low</option>
+                <option value="score-asc">Score: Low → High</option>
+                <option value="newest">Newest First</option>
+              </select>
+              <label className="flex items-center space-x-2 px-4 py-2 bg-white border border-zinc-200 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-50 transition-colors cursor-pointer">
+                <Plus className="w-4 h-4" /><span>Import CSV</span>
+                <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
+              </label>
+              <button onClick={handleExportCsv} className="flex items-center space-x-2 px-4 py-2 bg-white border border-zinc-200 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-50 transition-colors">
+                <Download className="w-4 h-4" /><span>Export CSV</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Filter row: search + score slider */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-white rounded-2xl border border-zinc-200 p-4">
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search leads..."
+                value={state.searchQuery}
+                onChange={e => setState(prev => ({ ...prev, searchQuery: e.target.value }))}
+                className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              />
+            </div>
+            <div className="flex items-center space-x-3 flex-1">
+              <SlidersHorizontal className="w-4 h-4 text-zinc-400 shrink-0" />
+              <span className="text-xs font-bold text-zinc-500 shrink-0">Min Score:</span>
+              <input
+                type="range" min={0} max={10} step={1}
+                value={state.minScore}
+                onChange={e => setState(prev => ({ ...prev, minScore: Number(e.target.value) }))}
+                className="flex-1 accent-indigo-600"
+              />
+              <span className={`text-sm font-black w-8 text-center rounded-lg px-1 ${state.minScore >= 8 ? 'text-emerald-600' : state.minScore >= 5 ? 'text-amber-600' : 'text-zinc-600'}`}>
+                {state.minScore === 0 ? 'All' : `${state.minScore}+`}
+              </span>
+            </div>
+            <span className="text-xs text-zinc-400 shrink-0">
+              Showing {filteredLeads.length}/{leadsFound.length}
+            </span>
           </div>
         </div>
 
@@ -727,9 +863,9 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
             </div>
           ) : filteredLeads.length > 0 ? (
             filteredLeads.map((lead) => (
-              <LeadCard 
+              <LeadCard
                 key={lead.id}
-                lead={lead} 
+                lead={lead}
                 isExpanded={state.expandedLeadId === lead.id}
                 onToggle={() => toggleLeadExpansion(lead.id)}
                 onSave={() => handleSaveLead(lead)}
@@ -739,6 +875,10 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                 onFindDecisionMaker={() => handleFindDecisionMaker(lead)}
                 onAutoPilot={() => handleAutoPilot(lead)}
                 onGenerateSniperInsights={() => handleGenerateSniperInsights(lead)}
+                onMarkContacted={() => {
+                  updateLead(lead.id, { status: 'Contacted' as Lead['status'] });
+                  if (!lead.isSaved) handleSaveLead(lead, true);
+                }}
               />
             ))
           ) : (
@@ -877,20 +1017,21 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
   );
 }
 
-function LeadCard({ 
-  lead, 
-  isExpanded, 
-  onToggle, 
-  onSave, 
-  onSendToAutomation, 
+function LeadCard({
+  lead,
+  isExpanded,
+  onToggle,
+  onSave,
+  onSendToAutomation,
   onDraftEmail,
   onBuildMockup,
   onFindDecisionMaker,
   onAutoPilot,
-  onGenerateSniperInsights
-}: { 
-  lead: Lead, 
-  isExpanded: boolean, 
+  onGenerateSniperInsights,
+  onMarkContacted
+}: {
+  lead: Lead,
+  isExpanded: boolean,
   onToggle: () => void,
   onSave: () => void,
   onSendToAutomation: () => void,
@@ -899,19 +1040,33 @@ function LeadCard({
   onFindDecisionMaker: () => void,
   onAutoPilot: () => void,
   onGenerateSniperInsights: () => void,
+  onMarkContacted: () => void,
   key?: React.Key
 }) {
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const isHot = (lead.score || 0) >= 8;
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 1500);
+    });
+  };
+
   return (
-    <div className={`bg-white rounded-3xl border transition-all duration-300 ${isExpanded ? 'border-indigo-200 shadow-xl shadow-indigo-50' : 'border-zinc-200 hover:border-zinc-300'}`}>
+    <div className={`bg-white rounded-3xl border transition-all duration-300 ${isExpanded ? 'border-indigo-200 shadow-xl shadow-indigo-50' : isHot ? 'border-amber-200 hover:border-amber-300' : 'border-zinc-200 hover:border-zinc-300'}`}>
       <div className="p-6 flex items-center justify-between cursor-pointer" onClick={onToggle}>
         <div className="flex items-center space-x-6">
-          <div className="w-12 h-12 rounded-2xl bg-zinc-50 flex items-center justify-center text-zinc-400 font-black text-xl border border-zinc-100">
-            {lead.businessName.charAt(0)}
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl border ${isHot ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-zinc-50 text-zinc-400 border-zinc-100'}`}>
+            {isHot ? '🔥' : lead.businessName.charAt(0)}
           </div>
           <div>
             <div className="flex items-center space-x-3">
               <h4 className="text-lg font-bold text-zinc-900">{lead.businessName}</h4>
-              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-full uppercase tracking-widest">Score: {lead.score}</span>
+              <span className={`px-2 py-0.5 text-[10px] font-black rounded-full uppercase tracking-widest ${
+                isHot ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'
+              }`}>Score: {lead.score}</span>
+              {isHot && <span className="px-2 py-0.5 bg-amber-500 text-white text-[10px] font-black rounded-full uppercase tracking-widest">Hot Lead</span>}
             </div>
             <div className="flex items-center space-x-4 mt-1 text-xs text-zinc-500">
               <span className="flex items-center space-x-1">
@@ -920,19 +1075,39 @@ function LeadCard({
               </span>
               <span className="flex items-center space-x-1">
                 <Globe className="w-3 h-3" />
-                <a href={lead.url} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-600 underline underline-offset-2">{lead.url}</a>
+                <a href={lead.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="hover:text-indigo-600 underline underline-offset-2">{lead.url}</a>
               </span>
-              <span className="flex items-center space-x-1">
-                <Target className="w-3 h-3" />
-                <span>{lead.phone}</span>
-              </span>
+              {lead.phone && (
+                <span className="flex items-center space-x-1">
+                  <Phone className="w-3 h-3" />
+                  <span>{lead.phone}</span>
+                  <button
+                    onClick={e => { e.stopPropagation(); copyToClipboard(lead.phone!, 'phone'); }}
+                    className="ml-1 p-0.5 text-zinc-300 hover:text-indigo-500 transition-colors"
+                    title="Copy phone"
+                  >
+                    {copiedField === 'phone' ? <CheckCircle className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </span>
+              )}
             </div>
           </div>
         </div>
-        
-        <div className="flex items-center space-x-4">
+
+        <div className="flex items-center space-x-3">
+          {lead.status !== 'Contacted' && lead.status !== 'Meeting Booked' && lead.status !== 'Proposal Sent' && lead.status !== 'Closed Won' && (
+            <button
+              onClick={e => { e.stopPropagation(); onMarkContacted(); }}
+              className="px-3 py-1.5 bg-blue-50 text-blue-600 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-blue-100 transition-colors border border-blue-100"
+              title="Mark as Contacted"
+            >
+              Mark Contacted
+            </button>
+          )}
           <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-            lead.status === 'New' ? 'bg-emerald-50 text-emerald-600' : 'bg-zinc-100 text-zinc-600'
+            lead.status === 'New' ? 'bg-emerald-50 text-emerald-600' :
+            lead.status === 'Contacted' ? 'bg-blue-50 text-blue-600' :
+            'bg-zinc-100 text-zinc-600'
           }`}>
             {lead.status}
           </span>
@@ -1033,7 +1208,17 @@ function LeadCard({
                       <p className="text-xs text-indigo-900 font-medium">{lead.sniperInsights.bestSalesAngle}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-1">Hyper-Personalized Icebreaker</p>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Hyper-Personalized Icebreaker</p>
+                        <button
+                          onClick={() => copyToClipboard(lead.sniperInsights!.icebreaker, 'icebreaker')}
+                          className="flex items-center space-x-1 text-[10px] text-indigo-400 hover:text-indigo-700 transition-colors"
+                          title="Copy icebreaker"
+                        >
+                          {copiedField === 'icebreaker' ? <CheckCircle className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedField === 'icebreaker' ? 'Copied!' : 'Copy'}</span>
+                        </button>
+                      </div>
                       <p className="text-xs text-indigo-900 leading-relaxed italic">"{lead.sniperInsights.icebreaker}"</p>
                     </div>
                   </div>
