@@ -89,6 +89,7 @@ async function fetchGoogleMapsLeads(
     else if (reviews < 20) angle = 'Needs More Reviews / SEO';
     else angle = 'Scale with AI Automation / Paid Ads';
 
+
     return {
       id: `gmaps-${place.id || Date.now()}-${index}`,
       businessName: place.displayName?.text || 'Unknown Business',
@@ -101,7 +102,7 @@ async function fetchGoogleMapsLeads(
       score: rating,
       wordOfMouth: { score: rating, summary: `${reviews} Google Reviews` },
       decisionMaker: { name: 'Owner / Manager', title: 'Decision Maker' },
-      emails: [],
+
       sniperInsights: {
         ownerVibe: rating >= 4.5 ? 'Proud of their service, protective of brand.' : 'Likely stressed, needs operational help.',
         bestSalesAngle: angle,
