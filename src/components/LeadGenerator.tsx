@@ -63,6 +63,8 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
   const [nicheOpen, setNicheOpen] = useState(false);
   const [cityOpen, setCityOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [mockup, setMockup] = useState<{ html: string; leadName: string } | null>(null);
+  const [mockupLoading, setMockupLoading] = useState(false);
   const nicheRef = useRef<HTMLDivElement>(null);
   const cityRef = useRef<HTMLDivElement>(null);
 
@@ -162,7 +164,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
       businessName: lead.businessName,
       url: lead.url,
       niche: lead.niche,
-      status: 'New',
+      status: lead.status || 'New',
       address: lead.address,
       phone: lead.phone,
       decisionMaker: lead.decisionMaker,
@@ -261,8 +263,11 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
       const toEmail = lead.emails && lead.emails.length > 0 ? lead.emails[0] : '';
       
       addLog("Closer: Outreach copy finalized.", "success");
-      // Open in default email client
-      window.open(`mailto:${toEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`);
+      const mailtoLink = document.createElement('a');
+      mailtoLink.href = `mailto:${toEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
+      document.body.appendChild(mailtoLink);
+      mailtoLink.click();
+      document.body.removeChild(mailtoLink);
     } catch (error) {
       console.error("Error drafting email:", error);
       alert("Failed to draft email.");
@@ -408,13 +413,15 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
       return;
     }
 
+    setMockupLoading(true);
     try {
-      alert(`Building AI website mockup for ${lead.businessName}... Please wait a few seconds.`);
+      addLog(`Builder: Generating website mockup for ${lead.businessName}...`);
       const ai = new GoogleGenAI({ apiKey });
-      const prompt = `Generate a single-file HTML landing page for a local business named "${lead.businessName}" in the "${lead.niche}" industry. 
-      Use Tailwind CSS via CDN. Make it look modern, clean, and highly converting. 
-      Include a hero section, services, and a contact form. 
-      Return ONLY the raw HTML code, no markdown formatting or backticks.`;
+      const prompt = `Generate a single-file HTML landing page for a local business named "${lead.businessName}" in the "${lead.niche}" industry located at "${lead.address || 'USA'}".
+      Use Tailwind CSS via CDN (https://cdn.tailwindcss.com). Make it look modern, clean, and highly converting.
+      Include: hero section with business name and tagline, services section (3-4 services), a trust/reviews section, and a contact form with phone and email.
+      Use a professional color scheme appropriate for ${lead.niche}.
+      Return ONLY the raw HTML code starting with <!DOCTYPE html>. No markdown, no backticks.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-1.5-flash',
@@ -422,15 +429,15 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
       });
 
       let htmlContent = response.text || '';
-      // Clean up markdown if present
-      htmlContent = htmlContent.replace(/^```html/i, '').replace(/```$/i, '').trim();
+      htmlContent = htmlContent.replace(/^```html\s*/i, '').replace(/\s*```$/i, '').trim();
 
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      setMockup({ html: htmlContent, leadName: lead.businessName });
+      addLog(`Builder: Mockup ready for ${lead.businessName}.`, 'success');
     } catch (error) {
       console.error("Error building mockup:", error);
-      alert("Failed to build website mockup.");
+      alert("Failed to build website mockup. Check your Gemini API key.");
+    } finally {
+      setMockupLoading(false);
     }
   };
 
@@ -1011,6 +1018,58 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Mockup Loading Overlay */}
+      {mockupLoading && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-white rounded-3xl p-10 text-center space-y-4 shadow-2xl max-w-sm mx-4">
+            <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto">
+              <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin" />
+            </div>
+            <h3 className="text-lg font-black text-zinc-900">Building Mockup...</h3>
+            <p className="text-sm text-zinc-500">Gemini is designing a custom landing page. Takes ~10 seconds.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Mockup Preview Modal */}
+      {mockup && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col">
+          <div className="flex items-center justify-between p-4 bg-white border-b border-zinc-200">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                <Layout className="w-4 h-4 text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="font-black text-zinc-900 text-sm">Website Mockup — {mockup.leadName}</h3>
+                <p className="text-[10px] text-zinc-400">AI-generated preview · Show this to the client</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <a
+                href={URL.createObjectURL(new Blob([mockup.html], { type: 'text/html' }))}
+                download={`mockup-${mockup.leadName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.html`}
+                className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors"
+              >
+                <Download className="w-3 h-3" />
+                <span>Download HTML</span>
+              </a>
+              <button
+                onClick={() => setMockup(null)}
+                className="p-2 hover:bg-zinc-100 rounded-xl transition-colors"
+              >
+                <X className="w-5 h-5 text-zinc-500" />
+              </button>
+            </div>
+          </div>
+          <iframe
+            srcDoc={mockup.html}
+            className="flex-1 w-full bg-white"
+            title={`Mockup for ${mockup.leadName}`}
+            sandbox="allow-scripts allow-same-origin"
+          />
         </div>
       )}
     </div>
