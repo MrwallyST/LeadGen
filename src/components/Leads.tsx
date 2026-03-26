@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { AppState, Lead, LeadStatus, AppSettings } from '../types';
-import { Plus, Search, ExternalLink, ChevronDown, ChevronUp, Download, Mail, Trash2, Globe, WifiOff, CheckSquare, Square } from 'lucide-react';
+
 import Papa from 'papaparse';
 import { GoogleGenAI } from '@google/genai';
 import { LeadCard } from './LeadCard';
@@ -70,34 +70,7 @@ const getSafeUrl = (url: string) => {
     setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   };
 
-  const handleDeleteSelected = () => {
-    if (selected.size === 0) return;
-    if (!confirm(`Delete ${selected.size} lead(s)?`)) return;
-    deleteLeads([...selected]);
-    setSelected(new Set());
-  };
 
-  const handleDeleteWithWebsite = () => {
-    const ids = state.leads.filter(l => !hasNoWebsite(l)).map(l => l.id);
-    if (ids.length === 0) return;
-    if (!confirm(`Delete all ${ids.length} leads WITH a website?`)) return;
-    deleteLeads(ids);
-    setSelected(new Set());
-  };
-
-  const handleDeleteNoWebsite = () => {
-    const ids = state.leads.filter(l => hasNoWebsite(l)).map(l => l.id);
-    if (ids.length === 0) return;
-    if (!confirm(`Delete all ${ids.length} leads WITHOUT a website?`)) return;
-    deleteLeads(ids);
-    setSelected(new Set());
-  };
-
-  const handleAdd = () => {
-    if (newLead.businessName) {
-      addLead(newLead as Omit<Lead, 'id'>);
-      setIsAdding(false);
-      setNewLead({ businessName: '', url: '', niche: '', status: 'New', value: 1000 });
     }
   };
 
@@ -162,9 +135,7 @@ const getSafeUrl = (url: string) => {
           <h2 className="text-2xl lg:text-3xl font-bold text-zinc-900 tracking-tight">CRM & Leads</h2>
           <p className="text-zinc-500 mt-1 text-sm">{state.leads.length} total · {withWebsiteCount} with website · {noWebsiteCount} without</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={handleExportCsv} className="bg-zinc-100 text-zinc-700 px-4 py-2 rounded-xl font-medium hover:bg-zinc-200 transition-colors flex items-center space-x-2 text-sm">
-            <Download className="w-4 h-4" /><span>Export CSV</span>
+
           </button>
           <button onClick={() => setIsAdding(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors flex items-center space-x-2 text-sm">
             <Plus className="w-4 h-4" /><span>Add Lead</span>

@@ -129,6 +129,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
   };
 
 
+
     addLead({
       businessName: lead.businessName,
       url: lead.url,
@@ -618,7 +619,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                   )}
                 </button>
                 <button
-                  onClick={() => toggleHunting(huntMode, true)}
+                  onClick={() => toggleHuntingLocal(huntMode, true)}
                   className={`py-3 px-6 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all ${
                     isHunting && isHuntingNoWebsite
                       ? 'bg-rose-500 text-white shadow-lg shadow-rose-200'
