@@ -3,12 +3,14 @@ import { AppState, Lead, LeadStatus, AppSettings } from '../types';
 import { Plus, Search, MoreVertical, ExternalLink, ChevronDown, ChevronUp, Download, Mail } from 'lucide-react';
 import Papa from 'papaparse';
 import { GoogleGenAI } from '@google/genai';
+import { LeadCard } from './LeadCard';
 
 interface LeadsProps {
   state: AppState;
   settings: AppSettings;
   addLead: (lead: Omit<Lead, 'id'>) => void;
   updateLead: (id: string, updates: Partial<Lead>) => void;
+  deleteLead: (id: string) => void;
 }
 
 const getSafeUrl = (url: string) => {
@@ -23,7 +25,7 @@ const getSafeUrl = (url: string) => {
   return '#';
 };
 
-export function Leads({ state, settings, addLead, updateLead }: LeadsProps) {
+export function Leads({ state, settings, addLead, updateLead, deleteLead }: LeadsProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
   const [newLead, setNewLead] = useState<Partial<Lead>>({
@@ -213,135 +215,29 @@ export function Leads({ state, settings, addLead, updateLead }: LeadsProps) {
           </div>
         </div>
         
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-zinc-100 text-zinc-500 bg-zinc-50/50">
-                <th className="px-6 py-4 font-medium">Business</th>
-                <th className="px-6 py-4 font-medium">Niche</th>
-                <th className="px-6 py-4 font-medium">Status</th>
-                <th className="px-6 py-4 font-medium">Contact Date</th>
-                <th className="px-6 py-4 font-medium">Value</th>
-                <th className="px-6 py-4 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {state.leads.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-zinc-500">
-                    No leads yet. Time to fill out some contact forms!
-                  </td>
-                </tr>
-              ) : (
-                state.leads.map(lead => (
-                  <React.Fragment key={lead.id}>
-                    <tr className="hover:bg-zinc-50/50 transition-colors group cursor-pointer" onClick={() => toggleExpand(lead.id)}>
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-zinc-900">{lead.businessName}</div>
-                        {lead.url && (
-                          <a href={getSafeUrl(lead.url)} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:underline flex items-center mt-1" onClick={e => e.stopPropagation()}>
-                            {lead.url} <ExternalLink className="w-3 h-3 ml-1" />
-                          </a>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-zinc-600">{lead.niche}</td>
-                      <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
-                        <select 
-                          className={`text-xs font-medium px-2.5 py-1 rounded-full border-none focus:ring-2 focus:ring-indigo-500 cursor-pointer ${statusColors[lead.status]}`}
-                          value={lead.status}
-                          onChange={(e) => updateLead(lead.id, { status: e.target.value as LeadStatus })}
-                        >
-                          {Object.keys(statusColors).map(status => (
-                            <option key={status} value={status}>{status}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-6 py-4 text-zinc-600">
-                        {lead.contactDate ? new Date(lead.contactDate).toLocaleDateString() : '-'}
-                      </td>
-                      <td className="px-6 py-4 text-zinc-600">
-                        ${lead.value?.toLocaleString() || 0}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button className="text-zinc-400 hover:text-zinc-900 transition-colors">
-                          {expandedLeadId === lead.id ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                        </button>
-                      </td>
-                    </tr>
-                    {expandedLeadId === lead.id && (
-                      <tr className="bg-zinc-50/50 border-b border-zinc-100">
-                        <td colSpan={6} className="px-6 py-6">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div className="space-y-4">
-                              <div>
-                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Received At</label>
-                                <input 
-                                  type="datetime-local" 
-                                  className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                  value={lead.receivedAt || ''}
-                                  onChange={(e) => updateLead(lead.id, { receivedAt: e.target.value })}
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Form Filled At</label>
-                                <input 
-                                  type="datetime-local" 
-                                  className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                  value={lead.formFilledAt || ''}
-                                  onChange={(e) => updateLead(lead.id, { formFilledAt: e.target.value })}
-                                />
-                              </div>
-                            </div>
-                            <div className="space-y-4">
-                              <div>
-                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Loom Sent At</label>
-                                <input 
-                                  type="datetime-local" 
-                                  className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                  value={lead.loomSentDate || ''}
-                                  onChange={(e) => updateLead(lead.id, { loomSentDate: e.target.value })}
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Lead Value ($)</label>
-                                <input 
-                                  type="number" 
-                                  className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                  value={lead.value || 0}
-                                  onChange={(e) => updateLead(lead.id, { value: Number(e.target.value) })}
-                                />
-                              </div>
-                            </div>
-                            <div className="space-y-4">
-                              <div>
-                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Notes</label>
-                                <textarea 
-                                  className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none h-16 resize-none"
-                                  placeholder="Add notes about this lead..."
-                                  value={lead.notes || ''}
-                                  onChange={(e) => updateLead(lead.id, { notes: e.target.value })}
-                                />
-                              </div>
-                              <div className="mt-2">
-                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">AI Actions</label>
-                                <button 
-                                  onClick={() => handleDraftEmail(lead)}
-                                  className="w-full py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg font-medium text-sm flex items-center justify-center space-x-2 transition-colors border border-indigo-100"
-                                >
-                                  <Mail className="w-4 h-4" />
-                                  <span>One-Click Draft Email</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="space-y-4 px-4 pb-4 mt-4">
+          {state.leads.length === 0 ? (
+             <div className="text-center py-12 text-zinc-500">No leads yet. Time to fill out some contact forms!</div>
+          ) : (
+            state.leads.map(lead => (
+              <LeadCard
+                key={lead.id}
+                lead={lead}
+                isExpanded={expandedLeadId === lead.id}
+                onToggle={() => toggleExpand(lead.id)}
+                isCrmView={true}
+                onDelete={() => deleteLead(lead.id)}
+                updateLead={updateLead}
+                onDraftEmail={() => handleDraftEmail(lead)}
+                onSave={() => {}}
+                onSendToAutomation={() => {}}
+                onBuildMockup={() => {}}
+                onFindDecisionMaker={() => {}}
+                onAutoPilot={() => {}}
+                onGenerateSniperInsights={() => {}}
+              />
+            ))
+          )}
         </div>
       </div>
     </div>

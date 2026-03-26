@@ -182,6 +182,16 @@ export default function App() {
     }
   };
 
+  const deleteLead = async (id: string) => {
+    if (!user) return;
+    setState(prev => ({ ...prev, leads: prev.leads.filter(l => l.id !== id) }));
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'leads', id));
+    } catch (error) {
+      console.error("Error deleting lead:", error);
+    }
+  };
+
   const updateRoutine = async (date: string, field: keyof DailyRoutine, value: boolean) => {
     if (!user) return;
     try {
@@ -291,7 +301,7 @@ export default function App() {
           {currentTab === 'dashboard' && <Dashboard state={state} updateRoutine={updateRoutine} />}
           {currentTab === 'firstclient' && <FirstClient />}
           {currentTab === 'firstsale' && <FirstSaleJourney />}
-          {currentTab === 'leads' && <Leads state={state} addLead={addLead} updateLead={updateLead} settings={state.settings} />}
+          {currentTab === 'leads' && <Leads state={state} addLead={addLead} updateLead={updateLead} deleteLead={deleteLead} settings={state.settings} />}
           {currentTab === 'leadgenerator' && <LeadGenerator settings={state.settings} updateSettings={updateSettings} addLead={addLead} />}
           {currentTab === 'prospector' && <Prospector settings={state.settings} updateSettings={updateSettings} />}
           {currentTab === 'automation' && <AutomationBlueprint />}
