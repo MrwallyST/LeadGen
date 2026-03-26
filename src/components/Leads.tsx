@@ -3,7 +3,6 @@ import { AppState, Lead, LeadStatus, AppSettings } from '../types';
 
 import Papa from 'papaparse';
 import { GoogleGenAI } from '@google/genai';
-import { LeadCard } from './LeadCard';
 
 interface LeadsProps {
   state: AppState;
@@ -11,7 +10,7 @@ interface LeadsProps {
   addLead: (lead: Omit<Lead, 'id'>) => void;
   updateLead: (id: string, updates: Partial<Lead>) => void;
   deleteLead: (id: string) => void;
-
+  deleteLeads: (ids: string[]) => void;
 }
 
 const getSafeUrl = (url: string) => {
@@ -26,7 +25,10 @@ const getSafeUrl = (url: string) => {
   return '#';
 };
 
+const hasNoWebsite = (lead: Lead) =>
+  !lead.url || lead.url.trim() === '' || lead.url.toLowerCase() === 'no website' || lead.url.toLowerCase() === 'none';
 
+export function Leads({ state, settings, addLead, updateLead, deleteLead, deleteLeads }: LeadsProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [expandedLeadId, setExpandedLeadId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -190,6 +192,196 @@ const getSafeUrl = (url: string) => {
           </div>
         </div>
 
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead>
+              <tr className="border-b border-zinc-100 text-zinc-500 bg-zinc-50/50 text-xs">
+                <th className="px-4 py-3 w-10">
+                  <button onClick={toggleSelectAll} className="text-zinc-400 hover:text-indigo-600 transition-colors">
+                    {allSelected ? <CheckSquare className="w-4 h-4 text-indigo-600" /> : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
+                <th className="px-4 py-3 font-semibold uppercase tracking-wider">Business</th>
+                <th className="px-4 py-3 font-semibold uppercase tracking-wider">Niche</th>
+                <th className="px-4 py-3 font-semibold uppercase tracking-wider">Status</th>
+                <th className="px-4 py-3 font-semibold uppercase tracking-wider">Score</th>
+                <th className="px-4 py-3 font-semibold uppercase tracking-wider">Phone</th>
+                <th className="px-4 py-3 font-semibold uppercase tracking-wider">Email</th>
+                <th className="px-4 py-3 font-semibold uppercase tracking-wider">Decision Maker</th>
+                <th className="px-4 py-3 font-semibold uppercase tracking-wider">Address</th>
+                <th className="px-4 py-3 font-semibold uppercase tracking-wider">Value</th>
+                <th className="px-4 py-3 font-semibold uppercase tracking-wider">Contact Date</th>
+                <th className="px-4 py-3 w-16"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={12} className="px-6 py-12 text-center text-zinc-400 text-sm">
+                    {search ? 'No leads match your search.' : 'No leads yet. Start hunting!'}
+                  </td>
+                </tr>
+              ) : (
+                filtered.map(lead => (
+                  <React.Fragment key={lead.id}>
+                    <tr className={`hover:bg-zinc-50 transition-colors group ${selected.has(lead.id) ? 'bg-indigo-50/40' : ''}`}>
+                      {/* Checkbox */}
+                      <td className="px-4 py-3" onClick={() => toggleSelect(lead.id)}>
+                        <button className="text-zinc-400 hover:text-indigo-600 transition-colors">
+                          {selected.has(lead.id) ? <CheckSquare className="w-4 h-4 text-indigo-600" /> : <Square className="w-4 h-4" />}
+                        </button>
+                      </td>
+
+                      {/* Business + URL */}
+                      <td className="px-4 py-3 cursor-pointer" onClick={() => setExpandedLeadId(expandedLeadId === lead.id ? null : lead.id)}>
+                        <div className="font-semibold text-zinc-900 max-w-[180px] truncate">{lead.businessName}</div>
+                        {lead.url && !hasNoWebsite(lead) ? (
+                          <a href={getSafeUrl(lead.url)} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-indigo-600 hover:underline flex items-center gap-1 mt-0.5 max-w-[180px] truncate"
+                            onClick={e => e.stopPropagation()}>
+                            {lead.url.replace(/^https?:\/\//, '').split('/')[0]} <ExternalLink className="w-3 h-3 shrink-0" />
+                          </a>
+                        ) : (
+                          <span className="text-xs text-zinc-400 mt-0.5 block">No website</span>
+                        )}
+                      </td>
+
+                      {/* Niche */}
+                      <td className="px-4 py-3 text-zinc-600 max-w-[120px] truncate">{lead.niche || '—'}</td>
+
+                      {/* Status */}
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        <select
+                          className={`text-xs font-medium px-2.5 py-1 rounded-full border-none focus:ring-2 focus:ring-indigo-500 cursor-pointer ${statusColors[lead.status]}`}
+                          value={lead.status}
+                          onChange={e => updateLead(lead.id, { status: e.target.value as LeadStatus })}>
+                          {Object.keys(statusColors).map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </td>
+
+                      {/* Score */}
+                      <td className="px-4 py-3">
+                        {lead.score != null ? (
+                          <span className={`text-xs font-bold px-2 py-1 rounded-full ${lead.score >= 7 ? 'bg-emerald-100 text-emerald-700' : lead.score >= 4 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {lead.score}/10
+                          </span>
+                        ) : '—'}
+                      </td>
+
+                      {/* Phone */}
+                      <td className="px-4 py-3 text-zinc-600 font-mono text-xs">{lead.phone || '—'}</td>
+
+                      {/* Email */}
+                      <td className="px-4 py-3 text-zinc-600 text-xs max-w-[160px] truncate">
+                        {lead.emails?.length ? (
+                          <a href={`mailto:${lead.emails[0]}`} className="text-indigo-600 hover:underline" onClick={e => e.stopPropagation()}>
+                            {lead.emails[0]}
+                          </a>
+                        ) : '—'}
+                      </td>
+
+                      {/* Decision Maker */}
+                      <td className="px-4 py-3 text-zinc-600 text-xs max-w-[140px] truncate">
+                        {lead.decisionMaker?.name ? (
+                          <span title={lead.decisionMaker.title}>{lead.decisionMaker.name}</span>
+                        ) : '—'}
+                      </td>
+
+                      {/* Address */}
+                      <td className="px-4 py-3 text-zinc-500 text-xs max-w-[160px] truncate">{lead.address || '—'}</td>
+
+                      {/* Value */}
+                      <td className="px-4 py-3 text-zinc-700 font-medium text-xs">${(lead.value || 0).toLocaleString()}</td>
+
+                      {/* Contact Date */}
+                      <td className="px-4 py-3 text-zinc-500 text-xs">
+                        {lead.contactDate ? new Date(lead.contactDate).toLocaleDateString() : '—'}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => setExpandedLeadId(expandedLeadId === lead.id ? null : lead.id)}
+                            className="p-1 text-zinc-400 hover:text-zinc-700 transition-colors rounded">
+                            {expandedLeadId === lead.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
+                          <button onClick={() => { if (confirm(`Delete ${lead.businessName}?`)) deleteLead(lead.id); }}
+                            className="p-1 text-zinc-300 hover:text-rose-500 transition-colors rounded opacity-0 group-hover:opacity-100">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Expanded Row */}
+                    {expandedLeadId === lead.id && (
+                      <tr className="bg-zinc-50/70 border-b border-zinc-100">
+                        <td colSpan={12} className="px-6 py-6">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Phone</label>
+                                <input type="text" className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  value={lead.phone || ''} onChange={e => updateLead(lead.id, { phone: e.target.value })} placeholder="Phone number" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Email(s)</label>
+                                <input type="text" className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  value={lead.emails?.join(', ') || ''}
+                                  onChange={e => updateLead(lead.id, { emails: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                                  placeholder="email@domain.com, ..." />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Address</label>
+                                <input type="text" className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  value={lead.address || ''} onChange={e => updateLead(lead.id, { address: e.target.value })} placeholder="City, State" />
+                              </div>
+                            </div>
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Decision Maker</label>
+                                <input type="text" className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  value={lead.decisionMaker?.name || ''}
+                                  onChange={e => updateLead(lead.id, { decisionMaker: { ...lead.decisionMaker, name: e.target.value, title: lead.decisionMaker?.title || '' } })}
+                                  placeholder="Owner name" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Lead Value ($)</label>
+                                <input type="number" className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  value={lead.value || 0} onChange={e => updateLead(lead.id, { value: Number(e.target.value) })} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Contact Date</label>
+                                <input type="datetime-local" className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  value={lead.contactDate || ''} onChange={e => updateLead(lead.id, { contactDate: e.target.value })} />
+                              </div>
+                            </div>
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Notes</label>
+                                <textarea className="w-full px-3 py-2 rounded-lg border border-zinc-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none h-24 resize-none"
+                                  placeholder="Add notes..." value={lead.notes || ''} onChange={e => updateLead(lead.id, { notes: e.target.value })} />
+                              </div>
+                              <div className="flex flex-col gap-2">
+                                <button onClick={() => handleDraftEmail(lead)}
+                                  className="w-full py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg font-medium text-sm flex items-center justify-center space-x-2 transition-colors border border-indigo-100">
+                                  <Mail className="w-4 h-4" /><span>Draft Email</span>
+                                </button>
+                                <button onClick={() => { if (confirm(`Delete ${lead.businessName}?`)) { deleteLead(lead.id); setExpandedLeadId(null); } }}
+                                  className="w-full py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg font-medium text-sm flex items-center justify-center space-x-2 transition-colors border border-rose-100">
+                                  <Trash2 className="w-4 h-4" /><span>Delete Lead</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
