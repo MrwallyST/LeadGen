@@ -123,7 +123,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
   };
 
 
-  const toggleHunting = async (mode: 'specific' | 'roulette' | 'infinite' = state.huntMode, restrictNoWebsite = false, isAutoLoop = false) => {
+  const toggleHuntingLocal = async (mode: 'specific' | 'roulette' | 'infinite' = state.huntMode, restrictNoWebsite = false, isAutoLoop = false) => {
     if (state.isHunting && !isAutoLoop) {
       setState(prev => ({ ...prev, isHunting: false, isHuntingNoWebsite: false }));
       return;
@@ -841,7 +841,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                   className="w-24 px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                 />
                 <button 
-                  onClick={() => toggleHunting(huntMode, false)}
+                  onClick={() => toggleHuntingLocal(huntMode, false)}
                   className={`flex-1 py-3 px-6 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all ${
                     isHunting 
                       ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' 
@@ -863,7 +863,7 @@ export function LeadGenerator({ settings, updateSettings, addLead }: LeadGenerat
                   )}
                 </button>
                 <button
-                  onClick={() => toggleHunting(huntMode, true)}
+                  onClick={() => toggleHuntingLocal(huntMode, true)}
                   className={`py-3 px-6 rounded-xl font-bold flex items-center justify-center space-x-2 transition-all ${
                     isHunting && isHuntingNoWebsite
                       ? 'bg-rose-500 text-white shadow-lg shadow-rose-200'

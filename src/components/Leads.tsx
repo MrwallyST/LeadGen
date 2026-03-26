@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppState, Lead, LeadStatus, AppSettings } from '../types';
-import { Plus, Search, MoreVertical, ExternalLink, ChevronDown, ChevronUp, Download, Mail } from 'lucide-react';
+import { Plus, Search, MoreVertical, ExternalLink, ChevronDown, ChevronUp, Download, Mail, Trash2 } from 'lucide-react';
 import Papa from 'papaparse';
 import { GoogleGenAI } from '@google/genai';
 import { LeadCard } from './LeadCard';
@@ -55,6 +55,13 @@ export function Leads({ state, settings, addLead, updateLead, deleteLead }: Lead
 
   const toggleExpand = (id: string) => {
     setExpandedLeadId(expandedLeadId === id ? null : id);
+  };
+
+  const handleDeleteWithWebsites = () => {
+    if (window.confirm("Are you sure you want to delete all leads that have websites?")) {
+      const leadsToDelete = state.leads.filter(lead => lead.url && lead.url.trim() !== '' && lead.url.toLowerCase() !== 'no website');
+      leadsToDelete.forEach(lead => deleteLead(lead.id));
+    }
   };
 
   const handleExportCsv = () => {
@@ -142,7 +149,14 @@ export function Leads({ state, settings, addLead, updateLead, deleteLead }: Lead
           <h2 className="text-2xl lg:text-3xl font-bold text-zinc-900 tracking-tight">CRM & Leads</h2>
           <p className="text-zinc-500 mt-2">Track your 5 daily contact forms and Loom outreach.</p>
         </div>
-        <div className="flex gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+          <button
+            onClick={handleDeleteWithWebsites}
+            className="bg-rose-50 text-rose-600 border border-rose-100 px-4 py-2 rounded-xl font-medium hover:bg-rose-100 transition-colors flex items-center justify-center space-x-2 flex-1 sm:flex-none"
+          >
+            <Trash2 className="w-5 h-5" />
+            <span>Delete All with Websites</span>
+          </button>
           <button 
             onClick={handleExportCsv}
             className="bg-zinc-100 text-zinc-700 px-4 py-2 rounded-xl font-medium hover:bg-zinc-200 transition-colors flex items-center justify-center space-x-2 flex-1 sm:flex-none"
@@ -215,12 +229,13 @@ export function Leads({ state, settings, addLead, updateLead, deleteLead }: Lead
           </div>
         </div>
         
-        <div className="space-y-4 px-4 pb-4 mt-4">
-          {state.leads.length === 0 ? (
-             <div className="text-center py-12 text-zinc-500">No leads yet. Time to fill out some contact forms!</div>
-          ) : (
-            state.leads.map(lead => (
-              <LeadCard
+        <div className="overflow-x-auto px-4 pb-4 mt-4">
+          <div className="space-y-4 min-w-[800px]">
+            {state.leads.length === 0 ? (
+               <div className="text-center py-12 text-zinc-500">No leads yet. Time to fill out some contact forms!</div>
+            ) : (
+              state.leads.map(lead => (
+                <LeadCard
                 key={lead.id}
                 lead={lead}
                 isExpanded={expandedLeadId === lead.id}
@@ -234,10 +249,11 @@ export function Leads({ state, settings, addLead, updateLead, deleteLead }: Lead
                 onBuildMockup={() => {}}
                 onFindDecisionMaker={() => {}}
                 onAutoPilot={() => {}}
-                onGenerateSniperInsights={() => {}}
-              />
-            ))
-          )}
+                  onGenerateSniperInsights={() => {}}
+                />
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
